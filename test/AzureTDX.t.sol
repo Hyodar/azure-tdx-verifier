@@ -3,17 +3,15 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 
-import {AzureTDX} from "../src/AzureTDX.sol";
+import {AzureTDX, AzureTDXAttestationDocument} from "../src/AzureTDX.sol";
 
 contract AzureTDXTest is Test {
+    using AzureTDXAttestationDocument for AzureTDX.AttestationDocument;
+
     function testValidate() public {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
-                akPub: AzureTDX.AkPub({
-                    exponentRaw: 0,
-                    modulusRaw: hex"f3925b240000c8195dccea9dca1dc03dd13abd11d9278dba4870b33b23a3678a2310e6d4fd0fd9418d17129b276fb62ba18253e84a8409d2bae7ddfb2db5409d5a1eefc971cb56a2cc883deb7e8fe4a519f98ca3acf4ce330c4ba36c634da852e488a67c2c9e97a54aedd4f4ddc81cc231de3152afdb6717f083484827b94aaa01b77467084d8d0409d3f2a1f8c021003775bc27d07f7453478e28c5c9a4b52e7be4fb6c7381a252281fd5802b8b89d510adb5e08584e22f2960c980ce6f8c62c744a8b34d568444af9e74ed23489fbf9a375cd8768029601716ac4b0a9e9d2542a3c6006bafd59776fa18ef8e1249397ee98d18e70c26eed5dc3ef3923860d9"
-                }),
-                quote: AzureTDX.TpmQuote({
+                tpmQuote: AzureTDX.TPMQuote({
                     quote: hex"ff54434780180022000bce04664aa230c8a92603c9eb4fd4167d9e8e4bbe2b1fcc20878634d321446074002019d3a0a35ce74a755e12231b6429d87e065e49e1137a6c367376141ebac32f5b00000000009b8490000000010000000001202003120012000300000001000b03ffffff0020b551100a22bd7da6b5531a2c02b90c57ae7a8421ee7ed61c831da7692df71ff1",
                     rsaSignature: hex"1d93ba45381c448c8ab6cf944e610f108b42b56f757daece33303f7b2b8c3e452770b735b4247dc4a5a194df7fb2434c6c51c4ce33e7648466da404b54dae9b04b882cd72f17cbede098cf9e9846c801811494ff0ea2209daf19d13dfe19d6bbc07482f3e99c5fa267f3792f7f89d4c5c47bf5d247f4ca726d4a5e31695945f0cbee551d52cc33d8a9f26cea217c15bff908440ad313e2c4cdf469a44f6b2284bfafe9413928722558b858d3588dd42948afd86722b8116ea224c1ff33fa68efa8301aad79d21a93e1cc7920a38f5c18ad629f4b2a2a6826643cc04d24ef04e51b37eb57ebdaebb174ccb73fae48a84bff7c30fd8aab0e5a48c99fac64b47311",
                     pcrs: [
@@ -58,6 +56,6 @@ contract AzureTDXTest is Test {
             modulusRaw: hex"f3925b240000c8195dccea9dca1dc03dd13abd11d9278dba4870b33b23a3678a2310e6d4fd0fd9418d17129b276fb62ba18253e84a8409d2bae7ddfb2db5409d5a1eefc971cb56a2cc883deb7e8fe4a519f98ca3acf4ce330c4ba36c634da852e488a67c2c9e97a54aedd4f4ddc81cc231de3152afdb6717f083484827b94aaa01b77467084d8d0409d3f2a1f8c021003775bc27d07f7453478e28c5c9a4b52e7be4fb6c7381a252281fd5802b8b89d510adb5e08584e22f2960c980ce6f8c62c744a8b34d568444af9e74ed23489fbf9a375cd8768029601716ac4b0a9e9d2542a3c6006bafd59776fa18ef8e1249397ee98d18e70c26eed5dc3ef3923860d9"
         });
 
-        AzureTDX.validate(attestationDocument, nonce, trustedAkPub);
+        attestationDocument.verify(nonce, trustedAkPub);
     }
 }

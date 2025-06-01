@@ -24,40 +24,44 @@ library AzureTDXErrors {
     error InvalidSignature();
 }
 
+/// @title AzureTDXConstants
+/// @notice Constants for Azure TDX attestation validation
+library AzureTDXConstants {
+    // TPM Quote Constants
+    uint32 internal constant TPMS_GENERATED_VALUE = 0xff544347;
+    uint16 internal constant TAG_ATTEST_QUOTE = 0x8018;
+
+    // Structure sizes
+    uint256 internal constant QUOTE_HEADER_SIZE = 6; // magic(4) + type(2)
+    uint256 internal constant CLOCK_INFO_SIZE = 17; // clock(8) + resetCount(4) + restartCount(4) + safe(1)
+    uint256 internal constant FIRMWARE_VERSION_SIZE = 8;
+    uint256 internal constant SHA256_DIGEST_SIZE = 32;
+    uint16 internal constant TPM_NONCE_SIZE = 32;
+
+    // PCR Constants
+    uint32 internal constant EXPECTED_PCR_BITMAP = 0xffffff; // All 24 PCRs
+
+    // TDX Quote Constants
+    uint256 internal constant TDX_REPORT_DATA_OFFSET = 0x238; // Offset of ReportData in TDX quote
+    uint256 internal constant TDX_REPORT_DATA_SIZE = 64;
+
+    // JSON parsing constants for HCL report
+    bytes32 internal constant RUNTIME_DATA_START_HASH =
+        keccak256(bytes("{\"keys\":[{\"kid\":\"HCLAkPub\",\"key_ops\":[\"sign\"],\"kty\":\"RSA\",\"e\":\""));
+    uint256 internal constant RUNTIME_DATA_START_LEN = 63;
+    uint256 internal constant RSA_EXPONENT_B64_LEN = 4;
+    uint256 internal constant RSA_EXPONENT_B64_END_OFFSET = 5; // RSA_EXPONENT_B64_LEN + length('"'), direct as used in assembly
+    uint32 internal constant DEFAULT_RSA_EXPONENT = 65537;
+}
+
 /// @title AzureTDX
 /// @notice Library for validating Azure TDX attestations with TPM quotes
 /// This library is compatible with the Constellation validation standard,
 /// relies on some initial pre-processing to remove unnecessary data and
 /// takes many assumptions over the data instead of doing a full sanity check.
 library AzureTDX {
-    // TPM Quote Constants
-    uint32 private constant TPMS_GENERATED_VALUE = 0xff544347;
-    uint16 private constant TAG_ATTEST_QUOTE = 0x8018;
-
-    // Structure sizes
-    uint256 private constant QUOTE_HEADER_SIZE = 6; // magic(4) + type(2)
-    uint256 private constant CLOCK_INFO_SIZE = 17; // clock(8) + resetCount(4) + restartCount(4) + safe(1)
-    uint256 private constant FIRMWARE_VERSION_SIZE = 8;
-    uint256 private constant SHA256_DIGEST_SIZE = 32;
-    uint16 private constant TPM_NONCE_SIZE = 32;
-
-    // PCR Constants
-    uint32 private constant EXPECTED_PCR_BITMAP = 0xffffff; // All 24 PCRs
-
-    // TDX Quote Constants
-    uint256 private constant TDX_REPORT_DATA_OFFSET = 0x238; // Offset of ReportData in TDX quote
-    uint256 private constant TDX_REPORT_DATA_SIZE = 64;
-
-    // JSON parsing constants for HCL report
-    bytes32 private constant RUNTIME_DATA_START_HASH =
-        keccak256(bytes("{\"keys\":[{\"kid\":\"HCLAkPub\",\"key_ops\":[\"sign\"],\"kty\":\"RSA\",\"e\":\""));
-    uint256 private constant RUNTIME_DATA_START_LEN = 63;
-    uint256 private constant RSA_EXPONENT_B64_LEN = 4;
-    uint256 private constant RSA_EXPONENT_B64_END_OFFSET = 5; // RSA_EXPONENT_B64_LEN + length('"'), direct as used in assembly
-    uint32 private constant DEFAULT_RSA_EXPONENT = 65537;
-
     /// @notice Minimal TPM quote structure containing only required fields
-    struct TpmQuote {
+    struct TPMQuote {
         bytes quote; // Raw quote data
         bytes rsaSignature; // RSA signature over the quote
         bytes32[24] pcrs; // PCR values
@@ -72,8 +76,7 @@ library AzureTDX {
 
     /// @notice Minimal attestation structure
     struct Attestation {
-        AkPub akPub; // Attestation Key public key
-        TpmQuote quote; // TPM quote data
+        TPMQuote tpmQuote; // TPM quote data
     }
 
     /// @notice Instance information containing attestation reports
@@ -88,85 +91,253 @@ library AzureTDX {
         InstanceInfo instanceInfo;
         bytes userData; // User-provided data included in attestation
     }
+}
 
-    /// @notice Validates a complete attestation document
+/// @title AzureTDXAttestationDocument
+/// @notice Attestation document implementation for Azure TDX attestation
+library AzureTDXAttestationDocument {
+    using AzureTDXTPMQuote for AzureTDX.TPMQuote;
+    using AzureTDXInstanceInfo for AzureTDX.InstanceInfo;
+
+    /// @notice Verifies a complete attestation document
     /// @param attestationDocument The attestation document to validate
     /// @param nonce Random nonce to prevent replay attacks
     /// @param trustedAkPub Trusted attestation key public key to verify against
     /// @return unverifiedTdxQuote The unverified TDX quote
     /// @return pcrs The PCR values from the TDX quote
-    function validate(AttestationDocument memory attestationDocument, bytes memory nonce, AkPub memory trustedAkPub)
+    function verify(
+        AzureTDX.AttestationDocument memory attestationDocument,
+        bytes memory nonce,
+        AzureTDX.AkPub memory trustedAkPub
+    )
         internal
         view
-        returns (bytes memory unverifiedTdxQuote, bytes32[24] memory pcrs)
+        returns (
+            bytes memory unverifiedTdxQuote,
+            bytes32[24] memory pcrs
+        )
     {
-        unverifiedTdxQuote = attestationDocument.instanceInfo.attestationReport;
-        pcrs = attestationDocument.attestation.quote.pcrs;
+        AzureTDX.TPMQuote memory tpmQuote = attestationDocument.attestation.tpmQuote;
 
-        // Verify the attestation key matches the trusted key
-        _verifyAkPub(attestationDocument.attestation.akPub, trustedAkPub);
+        unverifiedTdxQuote = attestationDocument.instanceInfo.attestationReport;
+        pcrs = tpmQuote.pcrs;
 
         // Compute expected nonce values
         bytes32 extraData = _makeExtraData(attestationDocument.userData, nonce);
         bytes32 tpmNonce = _makeTpmNonce(attestationDocument.instanceInfo, extraData);
 
         // Validate HCL report and verify it matches the attestation key
-        _validateHclReport(
-            attestationDocument.instanceInfo.runtimeData,
-            _extractReportDataPrefix(attestationDocument.instanceInfo.attestationReport),
-            attestationDocument.attestation.akPub
-        );
+        attestationDocument.instanceInfo.verify(trustedAkPub);
 
         // Verify the TPM attestation
-        _verifyQuote(attestationDocument.attestation.quote, attestationDocument.attestation.akPub, tpmNonce);
+        tpmQuote.verify(trustedAkPub, tpmNonce);
     }
 
-    /// @notice Verifies an RSA signature (to be implemented)
-    /// @param signature The RSA signature to verify
-    /// @param akPub The public key to verify against
-    /// @param message The message that was signed
-    function _verifyRsaSignature(bytes memory signature, AkPub memory akPub, bytes memory message) private view {
-        uint32 exponent = akPub.exponentRaw == 0 ? DEFAULT_RSA_EXPONENT : akPub.exponentRaw;
-
-        if (!RSA.pkcs1Sha256(message, signature, abi.encodePacked(exponent), akPub.modulusRaw)) {
-            revert AzureTDXErrors.InvalidSignature();
-        }
+    /// @notice Creates extra data hash from user data and nonce
+    /// @param userData User-provided data
+    /// @param nonce Random nonce
+    /// @return Hash of concatenated user data and nonce
+    function _makeExtraData(bytes memory userData, bytes memory nonce) private pure returns (bytes32) {
+        return sha256(abi.encodePacked(userData, nonce));
     }
 
-    /// @notice Verifies the attestation key public key matches the trusted key
-    /// @param akPub The attestation key from the document
-    /// @param trustedAkPub The trusted attestation key
-    function _verifyAkPub(AkPub memory akPub, AkPub memory trustedAkPub) private pure {
-        if (akPub.exponentRaw != trustedAkPub.exponentRaw) {
-            revert AzureTDXErrors.ExponentMismatch(akPub.exponentRaw, trustedAkPub.exponentRaw);
+    /// @notice Creates TPM nonce from instance info and extra data
+    /// @param instanceInfo Instance information containing reports
+    /// @param extraData Extra data hash
+    /// @return TPM nonce hash
+    function _makeTpmNonce(AzureTDX.InstanceInfo memory instanceInfo, bytes32 extraData) private pure returns (bytes32) {
+        return sha256(abi.encodePacked(instanceInfo.attestationReport, instanceInfo.runtimeData, extraData));
+    }
+}
+
+
+/// @title AzureTDXInstanceInfo
+/// @notice Instance information implementation for Azure TDX attestation
+library AzureTDXInstanceInfo {
+    /// @notice Verifies an instance information
+    /// @param instanceInfo The instance information to verify
+    /// @param trustedAkPub The trusted attestation key public key
+    function verify(AzureTDX.InstanceInfo memory instanceInfo, AzureTDX.AkPub memory trustedAkPub) internal pure {
+        _verifyHclReport(instanceInfo, trustedAkPub);
+    }
+
+    /// @notice Validates HCL report JSON and verifies it contains the correct AK public key
+    /// @param instanceInfo The instance information containing the runtime data
+    /// @param akPub The attestation key to verify against
+    function _verifyHclReport(AzureTDX.InstanceInfo memory instanceInfo, AzureTDX.AkPub memory akPub) private pure {
+        // Verify SHA256 hash of runtimeData matches beginning of reportData
+        bytes32 runtimeDataHash = sha256(instanceInfo.runtimeData);
+        bytes32 reportDataPrefix = _extractReportDataPrefix(instanceInfo.attestationReport);
+
+        if (runtimeDataHash != reportDataPrefix) {
+            revert AzureTDXErrors.RuntimeDataHashMismatch(runtimeDataHash, reportDataPrefix);
         }
 
-        if (akPub.modulusRaw.length != trustedAkPub.modulusRaw.length) {
-            revert AzureTDXErrors.ModulusLengthMismatch(akPub.modulusRaw.length, trustedAkPub.modulusRaw.length);
+        // Extract public key from JSON without full parsing
+        _validateJsonPublicKey(instanceInfo.runtimeData, akPub);
+    }
+
+    /// @notice Extracts and validates public key from JSON runtime data
+    /// @dev IMPORTANT: This function assumes JSON ordering. It will revert if
+    /// the JSON does not start with the form
+    /// `{"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"...","n":"..."}`
+    /// @param runtimeData The JSON data containing the public key
+    /// @param akPub The expected attestation key
+    function _validateJsonPublicKey(bytes memory runtimeData, AzureTDX.AkPub memory akPub) private pure {
+        // For efficiency, we'll use pattern matching instead of full JSON parsing
+        // Expected structure: {"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"...","n":"..."}, ...]}
+
+        uint256 runtimeDataStart;
+        /// @solidity memory-safe-assembly
+        assembly {
+            runtimeDataStart := add(runtimeData, 0x20)
+        }
+        
+        uint256 offset = AzureTDXConstants.RUNTIME_DATA_START_LEN;
+
+        // First we check that it starts with '{"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"'
+        bytes32 runtimeDataHash;
+        /// @solidity memory-safe-assembly
+        assembly {
+            runtimeDataHash := keccak256(runtimeDataStart, offset)
+        }
+        if (runtimeDataHash != AzureTDXConstants.RUNTIME_DATA_START_HASH) {
+            revert AzureTDXErrors.InvalidJSONStructure();
         }
 
-        if (keccak256(akPub.modulusRaw) != keccak256(trustedAkPub.modulusRaw)) {
+        bytes32 exponentB64;
+
+        // Then we extract the exponent from the JSON by looking for the "
+        // If we don't find it at runtimeDataStart.readByte(4), we revert
+        /// @solidity memory-safe-assembly
+        assembly {
+            let lookup := mload(add(runtimeDataStart, offset))
+            if eq(byte(4, lookup), 0x22) { exponentB64 := and(lookup, shl(224, 0xffffffff)) }
+        }
+        if (exponentB64 == bytes32(0)) {
+            revert AzureTDXErrors.InvalidJSONStructure();
+        }
+
+        unchecked {
+            offset += AzureTDXConstants.RSA_EXPONENT_B64_END_OFFSET;
+        }
+
+        // Then we check that it next contains ',\"n\":"'
+        bool hasCorrectKey;
+        /// @solidity memory-safe-assembly
+        assembly {
+            hasCorrectKey := eq(shr(208, mload(add(runtimeDataStart, offset))), 0x2c226e223a22) // ",\"n\":\""
+        }
+        if (!hasCorrectKey) {
+            revert AzureTDXErrors.InvalidJSONStructure();
+        }
+
+        unchecked {
+            offset += 6;
+        }
+
+        // Then we do a fancier lookup for the first " (0x22)
+        uint256 nEnd = AzureTDXInternalUtils.indexOfDoubleQuote(runtimeData, offset);
+
+        // Ideally we'd check the rest of the JSON as a constant here
+
+        bytes memory modulusB64 = AzureTDXInternalUtils.destructiveSlice(runtimeData, offset, nEnd);
+
+        // Decode base64 and validate
+        _validateDecodedKey(modulusB64, exponentB64, akPub);
+    }
+
+    /// @notice Extracts report data from a TDX quote
+    /// @param quote The TDX quote containing the report data
+    /// @return reportDataPrefix The extracted report data prefix
+    function _extractReportDataPrefix(bytes memory quote) private pure returns (bytes32 reportDataPrefix) {
+        if (quote.length < AzureTDXConstants.TDX_REPORT_DATA_OFFSET + AzureTDXConstants.TDX_REPORT_DATA_SIZE) {
+            revert AzureTDXErrors.QuoteTooShort(quote.length, AzureTDXConstants.TDX_REPORT_DATA_OFFSET + AzureTDXConstants.TDX_REPORT_DATA_SIZE);
+        }
+
+        uint256 offset = AzureTDXConstants.TDX_REPORT_DATA_OFFSET;
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            reportDataPrefix := mload(add(quote, add(0x20, offset)))
+        }
+    }
+    
+    /// @notice Validates decoded base64 key components match the attestation key
+    /// @param modulusB64 Base64 encoded modulus
+    /// @param exponentB64 Base64 encoded exponent
+    /// @param akPub Expected attestation key
+    function _validateDecodedKey(bytes memory modulusB64, bytes32 exponentB64, AzureTDX.AkPub memory akPub) private pure {
+        // Use inline assembly for base64 decoding to save gas
+        bytes memory decodedModulus = Base64.decode(string(modulusB64));
+
+        if (decodedModulus.length != akPub.modulusRaw.length) {
+            revert AzureTDXErrors.ModulusLengthMismatch(decodedModulus.length, akPub.modulusRaw.length);
+        }
+
+        if (keccak256(decodedModulus) != keccak256(akPub.modulusRaw)) {
             revert AzureTDXErrors.ModulusMismatch();
         }
+
+        uint32 exponentFromRuntime = _decodeExponent(exponentB64);
+
+        bool exponentMatches = (exponentFromRuntime == AzureTDXConstants.DEFAULT_RSA_EXPONENT && akPub.exponentRaw == 0)
+            || (exponentFromRuntime == akPub.exponentRaw);
+
+        if (!exponentMatches) {
+            revert AzureTDXErrors.ExponentMismatch(exponentFromRuntime, akPub.exponentRaw);
+        }
     }
 
+    /// @notice Decodes the exponent from base64
+    /// @param exponentB64 Base64 encoded exponent
+    /// @return Decoded exponent
+    function _decodeExponent(bytes32 exponentB64) private pure returns (uint32) {
+        // if the exponent is "AQAB" (0x41514142), it is 0
+        if (exponentB64 == bytes32(bytes4(0x41514142))) {
+            return 0;
+        }
+
+        return AzureTDXInternalUtils.decodeBase64Uint32LittleEndian(exponentB64);
+    }
+}
+
+/// @title AzureTDXTPMQuote
+/// @notice TPM quote implementation for Azure TDX attestation
+library AzureTDXTPMQuote {
+    using AzureTDXAkPub for AzureTDX.AkPub;
+
     /// @notice Verifies a TPM quote structure and signature
-    /// @param quote The TPM quote to verify
+    /// @param tpmQuote The TPM quote to verify
     /// @param akPub The attestation key public key
     /// @param tpmNonce Expected nonce value in the quote
-    function _verifyQuote(TpmQuote memory quote, AkPub memory akPub, bytes32 tpmNonce) private view {
-        bytes memory quoteData = quote.quote;
+    function verify(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.AkPub memory akPub, bytes32 tpmNonce) internal view {
+        validate(tpmQuote, tpmNonce);
+        
+        akPub.verifySignature(tpmQuote.rsaSignature, tpmQuote.quote);
+    }
+
+    /// @notice Validates a TPM quote structure
+    /// @param tpmQuote The TPM quote to verify
+    /// @param tpmNonce Expected nonce value in the quote
+    function validate(AzureTDX.TPMQuote memory tpmQuote, bytes32 tpmNonce) internal pure {
+        _validateHeader(tpmQuote, tpmNonce);
+        _validatePCRs(tpmQuote);
+    }
+
+    /// @notice Validates the TPM header
+    /// @param tpmQuote The TPM quote to verify
+    function _validateHeader(AzureTDX.TPMQuote memory tpmQuote, bytes32 tpmNonce) private pure {
+        bytes memory quoteData = tpmQuote.quote;
         uint256 quoteDataStart;
         /// @solidity memory-safe-assembly
         assembly {
             quoteDataStart := add(quoteData, 0x20)
         }
 
-        // Verify RSA signature over the quote
-        _verifyRsaSignature(quote.rsaSignature, akPub, quoteData);
 
-        if (quoteData.length < QUOTE_HEADER_SIZE) {
-            revert AzureTDXErrors.QuoteTooShort(quoteData.length, QUOTE_HEADER_SIZE);
+        if (quoteData.length < AzureTDXConstants.QUOTE_HEADER_SIZE) {
+            revert AzureTDXErrors.QuoteTooShort(quoteData.length, AzureTDXConstants.QUOTE_HEADER_SIZE);
         }
 
         uint256 offset = 0;
@@ -177,9 +348,9 @@ library AzureTDX {
             magic := shr(224, mload(add(quoteDataStart, offset)))
         }
 
-        if (magic != TPMS_GENERATED_VALUE) {
-            revert AzureTDXErrors.InvalidMagicValue(magic, TPMS_GENERATED_VALUE);
-        }
+        if (magic != AzureTDXConstants.TPMS_GENERATED_VALUE) {
+            revert AzureTDXErrors.InvalidMagicValue(magic, AzureTDXConstants.TPMS_GENERATED_VALUE);
+        }   
 
         unchecked {
             offset += 4;
@@ -191,8 +362,8 @@ library AzureTDX {
             attestType := shr(240, mload(add(quoteDataStart, offset)))
         }
 
-        if (attestType != TAG_ATTEST_QUOTE) {
-            revert AzureTDXErrors.InvalidAttestationType(attestType, TAG_ATTEST_QUOTE);
+        if (attestType != AzureTDXConstants.TAG_ATTEST_QUOTE) {
+            revert AzureTDXErrors.InvalidAttestationType(attestType, AzureTDXConstants.TAG_ATTEST_QUOTE);
         }
 
         unchecked {
@@ -215,8 +386,8 @@ library AzureTDX {
             extraDataLen := shr(240, mload(add(quoteDataStart, offset)))
         }
 
-        if (extraDataLen != TPM_NONCE_SIZE) {
-            revert AzureTDXErrors.InvalidExtraDataLength(extraDataLen, TPM_NONCE_SIZE);
+        if (extraDataLen != AzureTDXConstants.TPM_NONCE_SIZE) {
+            revert AzureTDXErrors.InvalidExtraDataLength(extraDataLen, AzureTDXConstants.TPM_NONCE_SIZE);
         }
 
         // TODO: Enable nonce verification when instanceInfo is used in ABI encoded form
@@ -231,31 +402,28 @@ library AzureTDX {
         // if (extraData != tpmNonce) {
         //     revert AzureTDXErrors.ExtraDataMismatch(extraData, tpmNonce);
         // }
-
-        // Validate PCR digest
-        _validatePCRs(quote);
     }
 
     /// @notice Validates PCR values match the digest in the quote
     /// @dev These values could be checked a bit more efficiently by reading
     /// the entire slot, masking it and comparing to a reference.
     /// Done individually for better error throwing.
-    /// @param quote The TPM quote containing PCR information
-    function _validatePCRs(TpmQuote memory quote) private pure {
+    /// @param tpmQuote The TPM quote containing PCR information
+    function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote) private pure {
         // Verify PCR bitmap
-        if (quote.pcrsBitMap != EXPECTED_PCR_BITMAP) {
-            revert AzureTDXErrors.InvalidPCRBitmap(quote.pcrsBitMap, EXPECTED_PCR_BITMAP);
+        if (tpmQuote.pcrsBitMap != AzureTDXConstants.EXPECTED_PCR_BITMAP) {
+            revert AzureTDXErrors.InvalidPCRBitmap(tpmQuote.pcrsBitMap, AzureTDXConstants.EXPECTED_PCR_BITMAP);
         }
 
         // Parse quote to extract PCR digest for comparison
-        bytes memory quoteData = quote.quote;
+        bytes memory quoteData = tpmQuote.quote;
         uint256 quoteDataStart;
         /// @solidity memory-safe-assembly
         assembly {
             quoteDataStart := add(quoteData, 0x20)
         }
 
-        uint256 offset = QUOTE_HEADER_SIZE;
+        uint256 offset = AzureTDXConstants.QUOTE_HEADER_SIZE;
 
         // Skip QualifiedSigner
         /// @solidity memory-safe-assembly
@@ -266,7 +434,7 @@ library AzureTDX {
 
         // Skip ExtraData, ClockInfo and FirmwareVersion
         unchecked {
-            offset += (2 + TPM_NONCE_SIZE) + CLOCK_INFO_SIZE + FIRMWARE_VERSION_SIZE;
+            offset += (2 + AzureTDXConstants.TPM_NONCE_SIZE) + AzureTDXConstants.CLOCK_INFO_SIZE + AzureTDXConstants.FIRMWARE_VERSION_SIZE;
         }
 
         uint32 pcrSelectionCount;
@@ -307,170 +475,33 @@ library AzureTDX {
             revert AzureTDXErrors.InvalidHashAlgorithm(hashAlgo, 11);
         }
 
-        if (pcrBitmap != EXPECTED_PCR_BITMAP) {
-            revert AzureTDXErrors.InvalidPCRBitmap(pcrBitmap, EXPECTED_PCR_BITMAP);
+        if (pcrBitmap != AzureTDXConstants.EXPECTED_PCR_BITMAP) {
+            revert AzureTDXErrors.InvalidPCRBitmap(pcrBitmap, AzureTDXConstants.EXPECTED_PCR_BITMAP);
         }
 
-        if (pcrDigestLen != SHA256_DIGEST_SIZE) {
-            revert AzureTDXErrors.InvalidPCRDigestLength(pcrDigestLen, SHA256_DIGEST_SIZE);
+        if (pcrDigestLen != AzureTDXConstants.SHA256_DIGEST_SIZE) {
+            revert AzureTDXErrors.InvalidPCRDigestLength(pcrDigestLen, AzureTDXConstants.SHA256_DIGEST_SIZE);
         }
 
-        if (pcrDigest != sha256(abi.encodePacked(quote.pcrs))) {
-            revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(quote.pcrs)));
-        }
-    }
-
-    /// @notice Validates HCL report JSON and verifies it contains the correct AK public key
-    /// @param runtimeData The JSON runtime data containing the public key
-    /// @param reportDataPrefix The report data prefix that should be the same as the runtime data hash
-    /// @param akPub The attestation key to verify against
-    function _validateHclReport(bytes memory runtimeData, bytes32 reportDataPrefix, AkPub memory akPub) private pure {
-        // Verify SHA256 hash of runtimeData matches beginning of reportData
-        bytes32 runtimeDataHash = sha256(runtimeData);
-
-        if (runtimeDataHash != reportDataPrefix) {
-            revert AzureTDXErrors.RuntimeDataHashMismatch(runtimeDataHash, reportDataPrefix);
-        }
-
-        // Extract public key from JSON without full parsing
-        _validateJsonPublicKey(runtimeData, akPub);
-    }
-
-    /// @notice Extracts and validates public key from JSON runtime data
-    /// @dev IMPORTANT: This function assumes JSON ordering. It will revert if
-    /// the JSON does not start with the form
-    /// `{"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"...","n":"..."}`
-    /// @param runtimeData The JSON data containing the public key
-    /// @param akPub The expected attestation key
-    function _validateJsonPublicKey(bytes memory runtimeData, AkPub memory akPub) private pure {
-        // For efficiency, we'll use pattern matching instead of full JSON parsing
-        // Expected structure: {"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"...","n":"..."}, ...]}
-
-        uint256 runtimeDataStart;
-        /// @solidity memory-safe-assembly
-        assembly {
-            runtimeDataStart := add(runtimeData, 0x20)
-        }
-
-        // First we check that it starts with '{"keys":[{"kid":"HCLAkPub","key_ops":["sign"],"kty":"RSA","e":"'
-        bytes32 runtimeDataHash;
-        /// @solidity memory-safe-assembly
-        assembly {
-            runtimeDataHash := keccak256(runtimeDataStart, RUNTIME_DATA_START_LEN)
-        }
-        if (runtimeDataHash != RUNTIME_DATA_START_HASH) {
-            revert AzureTDXErrors.InvalidJSONStructure();
-        }
-
-        bytes32 exponentB64;
-
-        // Then we extract the exponent from the JSON by looking for the "
-        // If we don't find it at runtimeDataStart.readByte(4), we revert
-        /// @solidity memory-safe-assembly
-        assembly {
-            let lookup := mload(add(runtimeDataStart, RUNTIME_DATA_START_LEN))
-            if eq(byte(4, lookup), 0x22) { exponentB64 := and(lookup, shl(224, 0xffffffff)) }
-        }
-        if (exponentB64 == bytes32(0)) {
-            revert AzureTDXErrors.InvalidJSONStructure();
-        }
-
-        uint256 offset;
-        unchecked {
-            offset = RUNTIME_DATA_START_LEN + RSA_EXPONENT_B64_END_OFFSET;
-        }
-
-        // Then we check that it next contains ',\"n\":"'
-        bool hasCorrectKey;
-        /// @solidity memory-safe-assembly
-        assembly {
-            hasCorrectKey := eq(shr(208, mload(add(runtimeDataStart, offset))), 0x2c226e223a22) // ",\"n\":\""
-        }
-        if (!hasCorrectKey) {
-            revert AzureTDXErrors.InvalidJSONStructure();
-        }
-
-        unchecked {
-            offset += 6;
-        }
-
-        // Then we do a fancier lookup for the first " (0x22)
-        uint256 nEnd = AzureTDXInternalUtils.indexOfDoubleQuote(runtimeData, offset);
-
-        // Ideally we'd check the rest of the JSON as a constant here
-
-        bytes memory modulusB64 = AzureTDXInternalUtils.destructiveSlice(runtimeData, offset, nEnd);
-
-        // Decode base64 and validate
-        _validateDecodedKey(modulusB64, exponentB64, akPub);
-    }
-
-    /// @notice Validates decoded base64 key components match the attestation key
-    /// @param modulusB64 Base64 encoded modulus
-    /// @param exponentB64 Base64 encoded exponent
-    /// @param akPub Expected attestation key
-    function _validateDecodedKey(bytes memory modulusB64, bytes32 exponentB64, AkPub memory akPub) private pure {
-        // Use inline assembly for base64 decoding to save gas
-        bytes memory decodedModulus = Base64.decode(string(modulusB64));
-
-        if (decodedModulus.length != akPub.modulusRaw.length) {
-            revert AzureTDXErrors.ModulusLengthMismatch(decodedModulus.length, akPub.modulusRaw.length);
-        }
-
-        if (keccak256(decodedModulus) != keccak256(akPub.modulusRaw)) {
-            revert AzureTDXErrors.ModulusMismatch();
-        }
-
-        uint32 exponentFromRuntime = _decodeExponent(exponentB64);
-
-        bool exponentMatches = (exponentFromRuntime == DEFAULT_RSA_EXPONENT && akPub.exponentRaw == 0)
-            || (exponentFromRuntime == akPub.exponentRaw);
-
-        if (!exponentMatches) {
-            revert AzureTDXErrors.ExponentMismatch(exponentFromRuntime, akPub.exponentRaw);
+        if (pcrDigest != sha256(abi.encodePacked(tpmQuote.pcrs))) {
+            revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(tpmQuote.pcrs)));
         }
     }
+}
 
-    /// @notice Extracts report data from a TDX quote
-    /// @param quote The TDX quote containing the report data
-    /// @return reportDataPrefix The extracted report data prefix
-    function _extractReportDataPrefix(bytes memory quote) private pure returns (bytes32 reportDataPrefix) {
-        if (quote.length < TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_SIZE) {
-            revert AzureTDXErrors.QuoteTooShort(quote.length, TDX_REPORT_DATA_OFFSET + TDX_REPORT_DATA_SIZE);
+/// @title AzureTDXAkPub
+/// @notice Attestation key public key implementation for Azure TDX attestation
+library AzureTDXAkPub {
+    /// @notice Verifies a signature over a message
+    /// @param signature The signature to verify
+    /// @param akPub The attestation key public key
+    /// @param message The message that was signed
+    function verifySignature(AzureTDX.AkPub memory akPub, bytes memory signature, bytes memory message) internal view {
+        uint32 exponent = akPub.exponentRaw == 0 ? AzureTDXConstants.DEFAULT_RSA_EXPONENT : akPub.exponentRaw;
+
+        if (!RSA.pkcs1Sha256(message, signature, abi.encodePacked(exponent), akPub.modulusRaw)) {
+            revert AzureTDXErrors.InvalidSignature();
         }
-
-        /// @solidity memory-safe-assembly
-        assembly {
-            reportDataPrefix := mload(add(quote, add(0x20, TDX_REPORT_DATA_OFFSET)))
-        }
-    }
-
-    /// @notice Creates extra data hash from user data and nonce
-    /// @param userData User-provided data
-    /// @param nonce Random nonce
-    /// @return Hash of concatenated user data and nonce
-    function _makeExtraData(bytes memory userData, bytes memory nonce) private pure returns (bytes32) {
-        return sha256(abi.encodePacked(userData, nonce));
-    }
-
-    /// @notice Creates TPM nonce from instance info and extra data
-    /// @param instanceInfo Instance information containing reports
-    /// @param extraData Extra data hash
-    /// @return TPM nonce hash
-    function _makeTpmNonce(InstanceInfo memory instanceInfo, bytes32 extraData) private pure returns (bytes32) {
-        return sha256(abi.encodePacked(instanceInfo.attestationReport, instanceInfo.runtimeData, extraData));
-    }
-
-    /// @notice Decodes the exponent from base64
-    /// @param exponentB64 Base64 encoded exponent
-    /// @return Decoded exponent
-    function _decodeExponent(bytes32 exponentB64) private pure returns (uint32) {
-        // if the exponent is "AQAB" (0x41514142), it is 0
-        if (exponentB64 == bytes32(bytes4(0x41514142))) {
-            return 0;
-        }
-
-        return AzureTDXInternalUtils.decodeBase64Uint32LittleEndian(exponentB64);
     }
 }
 
