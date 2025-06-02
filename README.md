@@ -10,3 +10,8 @@ standard for attestation issuance and verification.
 ```bash
 forge install Hyodar/azure-tdx-verifier
 ```
+
+## Input formatting
+
+To format the Constellation raw quote input for the TDX verifier, you can
+check out the CLI utility in [`utils/formatter`](utils/formatter).
