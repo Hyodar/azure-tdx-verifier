@@ -33,6 +33,7 @@ library AzureTDXConstants {
     uint16 internal constant TAG_ATTEST_QUOTE = 0x8018;
 
     // Structure sizes
+    // Literals so they can be used in assembly
     uint256 internal constant QUOTE_HEADER_SIZE = 6; // magic(4) + type(2)
     uint256 internal constant CLOCK_INFO_SIZE = 17; // clock(8) + resetCount(4) + restartCount(4) + safe(1)
     uint256 internal constant FIRMWARE_VERSION_SIZE = 8;
@@ -44,7 +45,7 @@ library AzureTDXConstants {
     uint32 internal constant PCR_COUNT = 24;
 
     // TDX Quote Constants
-    uint256 internal constant TDX_REPORT_DATA_OFFSET = 0x238; // Offset of ReportData in TDX quote
+    uint256 internal constant TDX_REPORT_DATA_OFFSET = 0x238;
     uint256 internal constant TDX_REPORT_DATA_SIZE = 64;
 
     // RSA Constants
