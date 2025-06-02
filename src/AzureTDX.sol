@@ -18,7 +18,7 @@ library AzureTDXErrors {
     error ExtraDataMismatch(bytes32 actual, bytes32 expected);
     error AttestationReportHashMismatch(bytes32 actual, bytes32 expected);
     error DuplicatePCR(uint256 index);
-    error InvalidPCRIndex(uint256 index);
+    error InvalidPCRIndex(uint256 index, uint256 bitmap);
     error PCRMismatch(uint256 entryIndex);
     error QuoteTooShort(uint256 actual, uint256 required);
     error InvalidHashAlgorithm(uint16 actual, uint16 expected);
@@ -507,18 +507,18 @@ library AzureTDXTPMQuote {
             revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(tpmQuote.pcrs)));
         }
 
-        uint256 pcrsBitmap = 0;
+        uint256 comparedPcrsBitmap = 0;
         for (uint256 i = 0; i < pcrs.length; i++) {
             uint256 index = pcrs[i].index;
-            if (index >= AzureTDXConstants.PCR_COUNT) {
-                revert AzureTDXErrors.InvalidPCRIndex(index);
+            if (pcrBitmap & (1 << index) == 0) {
+                revert AzureTDXErrors.InvalidPCRIndex(index, pcrBitmap);
             }
 
-            if (pcrsBitmap & (1 << index) != 0) {
+            if (comparedPcrsBitmap & (1 << index) != 0) {
                 revert AzureTDXErrors.DuplicatePCR(index);
             }
 
-            pcrsBitmap |= 1 << index;
+            comparedPcrsBitmap |= 1 << index;
 
             if (pcrs[i].digest != tpmQuote.pcrs[index]) {
                 revert AzureTDXErrors.PCRMismatch(i);
