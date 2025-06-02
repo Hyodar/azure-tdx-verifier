@@ -7,9 +7,6 @@ import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 /// @title AzureTDXErrors
 /// @notice Error definitions for Azure TDX attestation validation
 library AzureTDXErrors {
-    error ExponentMismatch(uint32 actual, uint32 expected);
-    error ModulusLengthMismatch(uint256 actual, uint256 expected);
-    error ModulusMismatch();
     error InvalidMagicValue(uint32 actual, uint32 expected);
     error InvalidAttestationType(uint16 actual, uint16 expected);
     error InvalidExtraDataLength(uint16 actual, uint16 expected);
@@ -23,7 +20,6 @@ library AzureTDXErrors {
     error DuplicatePCR(uint256 index);
     error InvalidPCRIndex(uint256 index);
     error PCRMismatch(uint256 entryIndex);
-    error InvalidJSONStructure();
     error QuoteTooShort(uint256 actual, uint256 required);
     error InvalidHashAlgorithm(uint16 actual, uint16 expected);
     error InvalidSignature();
@@ -51,12 +47,7 @@ library AzureTDXConstants {
     uint256 internal constant TDX_REPORT_DATA_OFFSET = 0x238; // Offset of ReportData in TDX quote
     uint256 internal constant TDX_REPORT_DATA_SIZE = 64;
 
-    // JSON parsing constants for HCL report
-    bytes32 internal constant RUNTIME_DATA_START_HASH =
-        keccak256(bytes("{\"keys\":[{\"kid\":\"HCLAkPub\",\"key_ops\":[\"sign\"],\"kty\":\"RSA\",\"e\":\""));
-    uint256 internal constant RUNTIME_DATA_START_LEN = 63;
-    uint256 internal constant RSA_EXPONENT_B64_LEN = 4;
-    uint256 internal constant RSA_EXPONENT_B64_END_OFFSET = 5; // RSA_EXPONENT_B64_LEN + length('"'), direct as used in assembly
+    // RSA Constants
     uint32 internal constant DEFAULT_RSA_EXPONENT = 65537;
 }
 
