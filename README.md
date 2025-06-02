@@ -1,6 +1,6 @@
 # Azure TDX Verifier
 
-EVM Smart Contracts for verifying Azure MAA TDX Attestations.
+Solidity library for verifying Azure MAA TDX Attestations.
 
 Currently based on the [Constellation](https://github.com/edgelesssys/constellation)
 standard for attestation issuance and verification.
