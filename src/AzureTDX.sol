@@ -20,6 +20,9 @@ library AzureTDXErrors {
     error RuntimeDataHashMismatch(bytes32 actual, bytes32 expected);
     error ExtraDataMismatch(bytes32 actual, bytes32 expected);
     error AttestationReportHashMismatch(bytes32 actual, bytes32 expected);
+    error DuplicatePCR(uint256 index);
+    error InvalidPCRIndex(uint256 index);
+    error PCRMismatch(uint256 entryIndex);
     error InvalidJSONStructure();
     error QuoteTooShort(uint256 actual, uint256 required);
     error InvalidHashAlgorithm(uint16 actual, uint16 expected);
@@ -42,6 +45,7 @@ library AzureTDXConstants {
 
     // PCR Constants
     uint32 internal constant EXPECTED_PCR_BITMAP = 0xffffff; // All 24 PCRs
+    uint32 internal constant PCR_COUNT = 24;
 
     // TDX Quote Constants
     uint256 internal constant TDX_REPORT_DATA_OFFSET = 0x238; // Offset of ReportData in TDX quote
@@ -87,6 +91,12 @@ library AzureTDX {
         bytes runtimeData; // Runtime configuration data (JSON)
     }
 
+    /// @notice PCR entry
+    struct PCR {
+        uint256 index; // PCR index
+        bytes32 digest; // PCR digest
+    }
+
     /// @notice Complete attestation document
     struct AttestationDocument {
         Attestation attestation;
@@ -100,6 +110,7 @@ library AzureTDX {
     struct TrustedInput {
         AkPub akPub;
         bytes32 runtimeDataHash;
+        PCR[] pcrs;
     }
 
     /// @notice Verification params
@@ -115,12 +126,7 @@ library AzureTDX {
     /// @notice Verifies an attestation
     /// @param verifyParams The verification params
     /// @return unverifiedTdxQuote The unverified TDX quote
-    /// @return pcrs The PCR values from the TDX quote
-    function verify(VerifyParams memory verifyParams)
-        internal
-        view
-        returns (bytes memory unverifiedTdxQuote, bytes32[24] memory pcrs)
-    {
+    function verify(VerifyParams memory verifyParams) internal view returns (bytes memory unverifiedTdxQuote) {
         return AzureTDXAttestationDocument.verify(
             verifyParams.attestationDocument, verifyParams.trustedInput, verifyParams.nonce
         );
@@ -138,12 +144,11 @@ library AzureTDXAttestationDocument {
     /// @param trustedInput Trusted input to verify against
     /// @param nonce Random nonce to prevent replay attacks
     /// @return unverifiedTdxQuote The unverified TDX quote
-    /// @return pcrs The PCR values from the TDX quote
     function verify(
         AzureTDX.AttestationDocument memory attestationDocument,
         AzureTDX.TrustedInput memory trustedInput,
         bytes memory nonce
-    ) internal view returns (bytes memory unverifiedTdxQuote, bytes32[24] memory pcrs) {
+    ) internal view returns (bytes memory unverifiedTdxQuote) {
         AzureTDX.TPMQuote memory tpmQuote = attestationDocument.attestation.tpmQuote;
 
         // Compute expected nonce values
@@ -154,10 +159,9 @@ library AzureTDXAttestationDocument {
         attestationDocument.instanceInfo.verify(trustedInput);
 
         // Verify the TPM attestation
-        tpmQuote.verify(trustedInput.akPub, tpmNonce);
+        tpmQuote.verify(trustedInput.akPub, trustedInput.pcrs, tpmNonce);
 
         unverifiedTdxQuote = attestationDocument.instanceInfo.attestationReport;
-        pcrs = tpmQuote.pcrs;
     }
 
     /// @notice Creates extra data hash from user data and nonce
@@ -339,8 +343,13 @@ library AzureTDXTPMQuote {
     /// @param tpmQuote The TPM quote to verify
     /// @param akPub The attestation key public key
     /// @param tpmNonce Expected nonce value in the quote
-    function verify(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.AkPub memory akPub, bytes32 tpmNonce) internal view {
-        validate(tpmQuote, tpmNonce);
+    function verify(
+        AzureTDX.TPMQuote memory tpmQuote,
+        AzureTDX.AkPub memory akPub,
+        AzureTDX.PCR[] memory pcrs,
+        bytes32 tpmNonce
+    ) internal view {
+        validate(tpmQuote, pcrs, tpmNonce);
 
         akPub.verifySignature(tpmQuote.rsaSignature, tpmQuote.quote);
     }
@@ -348,9 +357,9 @@ library AzureTDXTPMQuote {
     /// @notice Validates a TPM quote structure
     /// @param tpmQuote The TPM quote to verify
     /// @param tpmNonce Expected nonce value in the quote
-    function validate(AzureTDX.TPMQuote memory tpmQuote, bytes32 tpmNonce) internal pure {
+    function validate(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs, bytes32 tpmNonce) internal pure {
         _validateHeader(tpmQuote, tpmNonce);
-        _validatePCRs(tpmQuote);
+        _validatePCRs(tpmQuote, pcrs);
     }
 
     /// @notice Validates the TPM header
@@ -435,7 +444,7 @@ library AzureTDXTPMQuote {
     /// the entire slot, masking it and comparing to a reference.
     /// Done individually for better error throwing.
     /// @param tpmQuote The TPM quote containing PCR information
-    function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote) private pure {
+    function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private pure {
         // Verify PCR bitmap
         if (tpmQuote.pcrsBitMap != AzureTDXConstants.EXPECTED_PCR_BITMAP) {
             revert AzureTDXErrors.InvalidPCRBitmap(tpmQuote.pcrsBitMap, AzureTDXConstants.EXPECTED_PCR_BITMAP);
@@ -512,6 +521,24 @@ library AzureTDXTPMQuote {
 
         if (pcrDigest != sha256(abi.encodePacked(tpmQuote.pcrs))) {
             revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(tpmQuote.pcrs)));
+        }
+
+        uint256 pcrsBitmap = 0;
+        for (uint256 i = 0; i < pcrs.length; i++) {
+            uint256 index = pcrs[i].index;
+            if (index >= AzureTDXConstants.PCR_COUNT) {
+                revert AzureTDXErrors.InvalidPCRIndex(index);
+            }
+
+            if (pcrsBitmap & (1 << index) != 0) {
+                revert AzureTDXErrors.DuplicatePCR(index);
+            }
+
+            pcrsBitmap |= 1 << index;
+
+            if (pcrs[i].digest != tpmQuote.pcrs[index]) {
+                revert AzureTDXErrors.PCRMismatch(i);
+            }
         }
     }
 }

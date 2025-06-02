@@ -8,7 +8,7 @@ import {AzureTDX, AzureTDXAttestationDocument} from "../src/AzureTDX.sol";
 contract AzureTDXTest is Test {
     using AzureTDXAttestationDocument for AzureTDX.AttestationDocument;
 
-    function testValidate() public {
+    function testValidate() public view {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
                 tpmQuote: AzureTDX.TPMQuote({
@@ -56,12 +56,71 @@ contract AzureTDXTest is Test {
             modulusRaw: hex"f3925b240000c8195dccea9dca1dc03dd13abd11d9278dba4870b33b23a3678a2310e6d4fd0fd9418d17129b276fb62ba18253e84a8409d2bae7ddfb2db5409d5a1eefc971cb56a2cc883deb7e8fe4a519f98ca3acf4ce330c4ba36c634da852e488a67c2c9e97a54aedd4f4ddc81cc231de3152afdb6717f083484827b94aaa01b77467084d8d0409d3f2a1f8c021003775bc27d07f7453478e28c5c9a4b52e7be4fb6c7381a252281fd5802b8b89d510adb5e08584e22f2960c980ce6f8c62c744a8b34d568444af9e74ed23489fbf9a375cd8768029601716ac4b0a9e9d2542a3c6006bafd59776fa18ef8e1249397ee98d18e70c26eed5dc3ef3923860d9"
         });
 
+        AzureTDX.PCR[] memory pcrs = new AzureTDX.PCR[](24);
+        pcrs[0] = AzureTDX.PCR(
+            0, bytes32(uint256(37645797171158184732468721986270299784398438549564124443231249076923785412602))
+        );
+        pcrs[1] = AzureTDX.PCR(
+            1, bytes32(uint256(27713969312399434159380105741994129954265581387378098300047470127101038721385))
+        );
+        pcrs[2] = AzureTDX.PCR(
+            2, bytes32(uint256(27713969312399434159380105741994129954265581387378098300047470127101038721385))
+        );
+        pcrs[3] = AzureTDX.PCR(
+            3, bytes32(uint256(27713969312399434159380105741994129954265581387378098300047470127101038721385))
+        );
+        pcrs[4] = AzureTDX.PCR(
+            4, bytes32(uint256(100308816290205162691263547239468473529597464308675100084363806271985582543703))
+        );
+        pcrs[5] = AzureTDX.PCR(
+            5, bytes32(uint256(85986306086899107185024319289666393736977173015235967385217058801417379518516))
+        );
+        pcrs[6] = AzureTDX.PCR(
+            6, bytes32(uint256(81507114079948599435030657716554766391842330766180517532438193016222290499817))
+        );
+        pcrs[7] = AzureTDX.PCR(
+            7, bytes32(uint256(8278888237298061642248138619100605994962950042198251397805796935623926921990))
+        );
+        pcrs[8] = AzureTDX.PCR(8, bytes32(uint256(0)));
+        pcrs[9] = AzureTDX.PCR(
+            9, bytes32(uint256(47902905689328681685412330119108074074041116621421444580997615445252865182617))
+        );
+        pcrs[10] = AzureTDX.PCR(10, bytes32(uint256(0)));
+        pcrs[11] = AzureTDX.PCR(
+            11, bytes32(uint256(103453137167627572921978856330786802375877881888267128313849204123190365383333))
+        );
+        pcrs[12] = AzureTDX.PCR(12, bytes32(uint256(0)));
+        pcrs[13] = AzureTDX.PCR(13, bytes32(uint256(0)));
+        pcrs[14] = AzureTDX.PCR(14, bytes32(uint256(0)));
+        pcrs[15] = AzureTDX.PCR(15, bytes32(uint256(0)));
+        pcrs[16] = AzureTDX.PCR(16, bytes32(uint256(0)));
+        pcrs[17] = AzureTDX.PCR(
+            17, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[18] = AzureTDX.PCR(
+            18, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[19] = AzureTDX.PCR(
+            19, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[20] = AzureTDX.PCR(
+            20, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[21] = AzureTDX.PCR(
+            21, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[22] = AzureTDX.PCR(
+            22, bytes32(uint256(115792089237316195423570985008687907853269984665640564039457584007913129639935))
+        );
+        pcrs[23] = AzureTDX.PCR(23, bytes32(uint256(0)));
+
         AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({
             akPub: trustedAkPub,
-            runtimeDataHash: sha256(attestationDocument.instanceInfo.runtimeData)
+            runtimeDataHash: sha256(attestationDocument.instanceInfo.runtimeData),
+            pcrs: pcrs
         });
 
-        (bytes memory unverifiedTdxQuote, bytes32[24] memory pcrs) = AzureTDX.verify(
+        bytes memory unverifiedTdxQuote = AzureTDX.verify(
             AzureTDX.VerifyParams({attestationDocument: attestationDocument, trustedInput: trustedInput, nonce: nonce})
         );
     }
