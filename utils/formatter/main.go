@@ -167,21 +167,20 @@ func main() {
 		panic(err)
 	}
 
+	runtimeDataHash := sha256.Sum256(runtimeData)
+
 	output := OutputData{}
 
 	output.AttestationDocument.Attestation.TpmQuote.Quote = HexBytes(sha256Quote.Quote)
 	output.AttestationDocument.Attestation.TpmQuote.RsaSignature = HexBytes(decodedSig.RSA.Signature)
 	output.AttestationDocument.Attestation.TpmQuote.Pcrs = pcrs
-
 	output.AttestationDocument.InstanceInfo.AttestationReport = HexBytes(attestationReport)
 	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
 	output.AttestationDocument.UserData = inputData.UserData
-
 	output.TrustedInput.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
 	output.TrustedInput.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
-	output.TrustedInput.RuntimeDataHash = HexBytes32(sha256.Sum256(runtimeData))
+	output.TrustedInput.RuntimeDataHash = HexBytes32(runtimeDataHash)
 	output.TrustedInput.Pcrs = trustedPcrs
-
 	output.Nonce = inputData.Nonce
 
 	jsonOutput, err := json.MarshalIndent(output, "", "  ")
@@ -190,10 +189,4 @@ func main() {
 	}
 
 	fmt.Println(string(jsonOutput))
-}
-
-// Helper function to calculate SHA256 hash
-func sha256Hash(data []byte) []byte {
-	hash := sha256.Sum256(data)
-	return hash[:]
 }
