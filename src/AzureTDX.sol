@@ -207,10 +207,8 @@ library AzureTDXAttestationDocument {
         }
 
         // Set the offset to where the B64 string will be written
-        uint256 offset;
-        unchecked {
-            offset = 0x20 - 22 + 12;
-        }
+        uint256 offset = 22;
+
         // Set the free memory pointer to the start of the string
         assembly {
             mstore(0x40, add(result, offset))
