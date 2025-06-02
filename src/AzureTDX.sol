@@ -63,7 +63,6 @@ library AzureTDX {
         bytes quote; // Raw quote data
         bytes rsaSignature; // RSA signature over the quote
         bytes32[24] pcrs; // PCR values
-        uint32 pcrsBitMap; // Bitmap indicating which PCRs are included
     }
 
     /// @notice Decoded RSA public key structure
@@ -437,11 +436,6 @@ library AzureTDXTPMQuote {
     /// Done individually for better error throwing.
     /// @param tpmQuote The TPM quote containing PCR information
     function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private pure {
-        // Verify PCR bitmap
-        if (tpmQuote.pcrsBitMap != AzureTDXConstants.EXPECTED_PCR_BITMAP) {
-            revert AzureTDXErrors.InvalidPCRBitmap(tpmQuote.pcrsBitMap, AzureTDXConstants.EXPECTED_PCR_BITMAP);
-        }
-
         // Parse quote to extract PCR digest for comparison
         bytes memory quoteData = tpmQuote.quote;
         uint256 quoteDataStart;
