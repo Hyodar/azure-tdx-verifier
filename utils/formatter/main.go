@@ -7,13 +7,37 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"os"
 
 	"github.com/google/go-tpm-tools/proto/attest"
 	tpmproto "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/legacy/tpm2"
 )
+
+type HexBytes []byte
+
+func (h HexBytes) MarshalJSON() ([]byte, error) {
+	return json.Marshal(hex.EncodeToString(h))
+}
+
+func (h *HexBytes) UnmarshalJSON(data []byte) error {
+	var hexStr string
+	if err := json.Unmarshal(data, &hexStr); err != nil {
+		return err
+	}
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return err
+	}
+	*h = decoded
+	return nil
+}
+
+type HexBytes32 [32]byte
+
+func (h HexBytes32) MarshalJSON() ([]byte, error) {
+	return json.Marshal(fmt.Sprintf("0x%064x", h))
+}
 
 type InputData struct {
 	RawQuote json.RawMessage `json:"rawQuote"`
@@ -32,31 +56,30 @@ type AttestationDocument struct {
 	UserData     []byte
 }
 
-type AttestationOutput struct {
+type OutputData struct {
 	AttestationDocument struct {
 		Attestation struct {
 			TpmQuote struct {
-				Quote        string   `json:"quote"`
-				RsaSignature string   `json:"rsaSignature"`
-				Pcrs         []string `json:"pcrs"` // PCR values as big integer strings
-				PcrsBitMap   uint32   `json:"pcrsBitMap"`
+				Quote        HexBytes       `json:"quote"`
+				RsaSignature HexBytes       `json:"rsaSignature"`
+				Pcrs         [24]HexBytes32 `json:"pcrs"`
 			} `json:"tpmQuote"`
 		} `json:"attestation"`
 		InstanceInfo struct {
-			AttestationReport string `json:"attestationReport"`
-			RuntimeData       string `json:"runtimeData"`
+			AttestationReport HexBytes `json:"attestationReport"`
+			RuntimeData       HexBytes `json:"runtimeData"`
 		} `json:"instanceInfo"`
 		UserData string `json:"userData"`
 	} `json:"attestationDocument"`
 	TrustedInput struct {
 		AkPub struct {
-			ExponentRaw uint32 `json:"exponentRaw"`
-			ModulusRaw  string `json:"modulusRaw"`
+			ExponentRaw uint32   `json:"exponentRaw"`
+			ModulusRaw  HexBytes `json:"modulusRaw"`
 		} `json:"akPub"`
-		RuntimeDataHash string `json:"runtimeDataHash"`
+		RuntimeDataHash HexBytes32 `json:"runtimeDataHash"`
 		Pcrs            []struct {
-			Index uint8  `json:"index"`
-			Value string `json:"value"` // PCR value as big integer string
+			Index uint8      `json:"index"`
+			Value HexBytes32 `json:"value"`
 		} `json:"pcrs"`
 	} `json:"trustedInput"`
 	Nonce string `json:"nonce"`
@@ -106,15 +129,9 @@ func main() {
 		panic("no SHA256 quote found")
 	}
 
-	pcrs := [24][32]byte{}
+	pcrs := [24]HexBytes32{}
 	for i, pcr := range sha256Quote.Pcrs.Pcrs {
 		copy(pcrs[i][:], pcr[:])
-	}
-
-	pcrBigIntStrs := []string{}
-	for _, pcr := range pcrs {
-		bigInt := new(big.Int).SetBytes(pcr[:])
-		pcrBigIntStrs = append(pcrBigIntStrs, fmt.Sprintf("0x%064x", bigInt))
 	}
 
 	decodedSig, err := tpm2.DecodeSignature(bytes.NewBuffer(sha256Quote.RawSig))
@@ -123,18 +140,20 @@ func main() {
 	}
 
 	trustedPcrs := []struct {
-		Index uint8  `json:"index"`
-		Value string `json:"value"`
+		Index uint8      `json:"index"`
+		Value HexBytes32 `json:"value"`
 	}{}
 
 	for i, pcr := range pcrs {
-		bigInt := new(big.Int).SetBytes(pcr[:])
+		val := HexBytes32{}
+		copy(val[:], pcr[:])
+
 		trustedPcrs = append(trustedPcrs, struct {
-			Index uint8  `json:"index"`
-			Value string `json:"value"`
+			Index uint8      `json:"index"`
+			Value HexBytes32 `json:"value"`
 		}{
 			Index: uint8(i),
-			Value: fmt.Sprintf("0x%064x", bigInt),
+			Value: val,
 		})
 	}
 
@@ -148,19 +167,19 @@ func main() {
 		panic(err)
 	}
 
-	output := AttestationOutput{}
+	output := OutputData{}
 
-	output.AttestationDocument.Attestation.TpmQuote.Quote = hex.EncodeToString(sha256Quote.Quote)
-	output.AttestationDocument.Attestation.TpmQuote.RsaSignature = hex.EncodeToString(decodedSig.RSA.Signature)
-	output.AttestationDocument.Attestation.TpmQuote.Pcrs = pcrBigIntStrs
+	output.AttestationDocument.Attestation.TpmQuote.Quote = HexBytes(sha256Quote.Quote)
+	output.AttestationDocument.Attestation.TpmQuote.RsaSignature = HexBytes(decodedSig.RSA.Signature)
+	output.AttestationDocument.Attestation.TpmQuote.Pcrs = pcrs
 
-	output.AttestationDocument.InstanceInfo.AttestationReport = hex.EncodeToString(attestationReport)
-	output.AttestationDocument.InstanceInfo.RuntimeData = hex.EncodeToString(runtimeData)
+	output.AttestationDocument.InstanceInfo.AttestationReport = HexBytes(attestationReport)
+	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
 	output.AttestationDocument.UserData = inputData.UserData
 
 	output.TrustedInput.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
-	output.TrustedInput.AkPub.ModulusRaw = hex.EncodeToString(decodedAkPub.RSAParameters.ModulusRaw)
-	output.TrustedInput.RuntimeDataHash = hex.EncodeToString(sha256Hash(runtimeData))
+	output.TrustedInput.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
+	output.TrustedInput.RuntimeDataHash = HexBytes32(sha256.Sum256(runtimeData))
 	output.TrustedInput.Pcrs = trustedPcrs
 
 	output.Nonce = inputData.Nonce
