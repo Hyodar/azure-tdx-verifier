@@ -173,101 +173,19 @@ library AzureTDXAttestationDocument {
         pure
         returns (bytes32)
     {
-        // Below is a slightly more fun and unsafe version of the below code.
-        // ```Solidity
-        // bytes(abi.encodePacked(
-        //     "{\"AttestationReport\":\"",
-        //     Base64.encode(instanceInfo.attestationReport),
-        //     "\",\"RuntimeData\":\"",
-        //     Base64.encode(instanceInfo.runtimeData),
-        //     "\"}",
-        //     extraData
-        // ))
-        // ```
-        // This saves about 20k gas.
-
-        // Calculate the length of the Base64 encoded strings
-        uint256 attestationReportB64Length = 4 * ((instanceInfo.attestationReport.length + 2) / 3);
-        uint256 runtimeDataB64Length = 4 * ((instanceInfo.runtimeData.length + 2) / 3);
-
-        // Calculate the total length of the resulting string
-        // len("{\"AttestationReport\":\"") == 22
-        // len("\",\"RuntimeData\":\"") == 17
-        // len("\"}") == 2
-        // len(extraData) == 32
-        uint256 finalLength = 22 + attestationReportB64Length + 17 + runtimeDataB64Length + 2 + 32;
-
-        // Allocate the string
-        string memory result = new string(finalLength);
-
-        // Secure the current free memory pointer
-        uint256 fmp;
-        assembly {
-            fmp := mload(0x40)
-        }
-
-        // Set the offset to where the B64 string will be written
-        uint256 offset = 22;
-
-        // Set the free memory pointer to the start of the string
-        assembly {
-            mstore(0x40, add(result, offset))
-        }
-
-        // Write the attestation report B64 string
-        Base64.encode(instanceInfo.attestationReport);
-
-        // Write the attestation report prefix string overriding the length part
-        assembly {
-            let attestationReportPrefix := 0x7b224174746573746174696f6e5265706f7274223a22 // "{\"AttestationReport\":\""
-            mstore(add(result, offset), attestationReportPrefix)
-            mstore(result, finalLength)
-        }
-
-        // Write the runtime data B64 string
-        unchecked {
-            offset += 0x20 + attestationReportB64Length;
-        }
-        assembly {
-            let runtimePrefix := shl(120, 0x222c2252756e74696d6544617461223a22) // "\",\"RuntimeData\":\""
-            mstore(add(result, offset), runtimePrefix)
-        }
-
-        unchecked {
-            offset += 17;
-        }
-
-        // Write the runtime data prefix string securing and restoring what will be its length slot
-        uint256 tmp;
-        assembly {
-            mstore(0x40, add(result, sub(offset, 0x20)))
-            tmp := mload(add(result, sub(offset, 0x20)))
-        }
-        Base64.encode(instanceInfo.runtimeData);
-        assembly {
-            mstore(add(result, sub(offset, 0x20)), tmp)
-        }
-
-        unchecked {
-            offset += runtimeDataB64Length;
-        }
-
-        // Write the runtime data suffix string and extra data
-        assembly {
-            let runtimePrefix := shl(240, 0x227d) // "\"}"
-            mstore(add(result, offset), runtimePrefix)
-
-            offset := add(offset, 2)
-
-            mstore(add(result, offset), extraData)
-        }
-
-        // Restore the free memory pointer
-        assembly {
-            mstore(0x40, fmp)
-        }
-
-        return sha256(bytes(result));
+        // Compiling this with solc 0.8.28, the result is actually very
+        // efficient.
+        // The difference from encoding it like this versus pre-allocating the
+        // string and manipulating the FMP to fill it is about 400 gas only,
+        // even if it feels like this would lead to way more gas usage.
+        return sha256(bytes(abi.encodePacked(
+            "{\"AttestationReport\":\"",
+            Base64.encode(instanceInfo.attestationReport),
+            "\",\"RuntimeData\":\"",
+            Base64.encode(instanceInfo.runtimeData),
+            "\"}",
+            extraData
+        )));
     }
 }
 
