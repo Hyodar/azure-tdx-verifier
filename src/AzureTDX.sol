@@ -178,6 +178,7 @@ library AzureTDXAttestationDocument {
         // The difference from encoding it like this versus pre-allocating the
         // string and manipulating the FMP to fill it is about 400 gas only,
         // even if it feels like this would lead to way more gas usage.
+        // forgefmt: disable-next-item
         return sha256(bytes(abi.encodePacked(
             "{\"AttestationReport\":\"",
             Base64.encode(instanceInfo.attestationReport),
