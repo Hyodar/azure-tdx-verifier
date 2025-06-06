@@ -273,74 +273,52 @@ library AzureTDXTPMQuote {
     /// @param tpmQuote The TPM quote to verify
     function _validateHeader(AzureTDX.TPMQuote memory tpmQuote, bytes32 tpmNonce) private pure {
         bytes memory quoteData = tpmQuote.quote;
-        uint256 quoteDataStart;
+        uint256 quoteDataCursor;
         /// @solidity memory-safe-assembly
         assembly {
-            quoteDataStart := add(quoteData, 0x20)
+            quoteDataCursor := add(quoteData, 0x20)
         }
 
         if (quoteData.length < AzureTDXConstants.QUOTE_HEADER_SIZE) {
             revert AzureTDXErrors.QuoteTooShort(quoteData.length, AzureTDXConstants.QUOTE_HEADER_SIZE);
         }
 
-        uint256 offset = 0;
-
         uint32 magic;
+        uint16 attestType;
+        uint16 nameLen;
+        uint16 extraDataLen;
+        bytes32 extraData;
+
+        // Read all header values in assembly
         /// @solidity memory-safe-assembly
         assembly {
-            magic := shr(224, mload(add(quoteDataStart, offset)))
+            magic := shr(224, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 4)
+
+            attestType := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 2)
+
+            nameLen := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, add(2, nameLen))
+
+            extraDataLen := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 2)
+
+            extraData := mload(quoteDataCursor)
         }
 
         if (magic != AzureTDXConstants.TPMS_GENERATED_VALUE) {
             revert AzureTDXErrors.InvalidMagicValue(magic, AzureTDXConstants.TPMS_GENERATED_VALUE);
         }
 
-        unchecked {
-            offset += 4;
-        }
-
-        uint16 attestType;
-        /// @solidity memory-safe-assembly
-        assembly {
-            attestType := shr(240, mload(add(quoteDataStart, offset)))
-        }
-
         if (attestType != AzureTDXConstants.TAG_ATTEST_QUOTE) {
             revert AzureTDXErrors.InvalidAttestationType(attestType, AzureTDXConstants.TAG_ATTEST_QUOTE);
-        }
-
-        unchecked {
-            offset += 2;
-        }
-
-        uint16 nameLen;
-        /// @solidity memory-safe-assembly
-        assembly {
-            nameLen := shr(240, mload(add(quoteDataStart, offset)))
-        }
-
-        unchecked {
-            offset += 2 + nameLen;
-        }
-
-        uint16 extraDataLen;
-        /// @solidity memory-safe-assembly
-        assembly {
-            extraDataLen := shr(240, mload(add(quoteDataStart, offset)))
         }
 
         if (extraDataLen != AzureTDXConstants.TPM_NONCE_SIZE) {
             revert AzureTDXErrors.InvalidExtraDataLength(extraDataLen, AzureTDXConstants.TPM_NONCE_SIZE);
         }
 
-        unchecked {
-            offset += 2;
-        }
-        bytes32 extraData;
-        /// @solidity memory-safe-assembly
-        assembly {
-            extraData := mload(add(quoteDataStart, offset))
-        }
         if (extraData != tpmNonce) {
             revert AzureTDXErrors.ExtraDataMismatch(extraData, tpmNonce);
         }
@@ -354,24 +332,25 @@ library AzureTDXTPMQuote {
     function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private pure {
         // Parse quote to extract PCR digest for comparison
         bytes memory quoteData = tpmQuote.quote;
-        uint256 quoteDataStart;
+        uint256 quoteDataCursor;
         /// @solidity memory-safe-assembly
         assembly {
-            quoteDataStart := add(quoteData, 0x20)
+            quoteDataCursor := add(quoteData, 0x20)
         }
-
-        uint256 offset = AzureTDXConstants.QUOTE_HEADER_SIZE;
+        unchecked {
+            quoteDataCursor += AzureTDXConstants.QUOTE_HEADER_SIZE;
+        }
 
         // Skip QualifiedSigner
         /// @solidity memory-safe-assembly
         assembly {
-            let nameLen := shr(240, mload(add(quoteDataStart, offset)))
-            offset := add(offset, add(2, nameLen))
+            let nameLen := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, add(2, nameLen))
         }
 
         // Skip ExtraData, ClockInfo and FirmwareVersion
         unchecked {
-            offset += (2 + AzureTDXConstants.TPM_NONCE_SIZE) + AzureTDXConstants.CLOCK_INFO_SIZE
+            quoteDataCursor += (2 + AzureTDXConstants.TPM_NONCE_SIZE) + AzureTDXConstants.CLOCK_INFO_SIZE
                 + AzureTDXConstants.FIRMWARE_VERSION_SIZE;
         }
 
@@ -385,24 +364,22 @@ library AzureTDXTPMQuote {
         // Parse PCR selection and digest
         /// @solidity memory-safe-assembly
         assembly {
-            pcrSelectionCount := shr(224, mload(add(quoteDataStart, offset)))
-            offset := add(offset, 4)
+            pcrSelectionCount := shr(224, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 4)
 
-            hashAlgo := shr(240, mload(add(quoteDataStart, offset)))
-            offset := add(offset, 2)
+            hashAlgo := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 2)
 
-            sizeOfBitmap := shr(248, mload(add(quoteDataStart, offset)))
-            offset := add(offset, 1)
+            sizeOfBitmap := shr(248, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 1)
 
-            if gt(sizeOfBitmap, 0) {
-                pcrBitmap := shr(sub(256, mul(sizeOfBitmap, 8)), mload(add(quoteDataStart, offset)))
-            }
-            offset := add(offset, sizeOfBitmap)
+            if gt(sizeOfBitmap, 0) { pcrBitmap := shr(sub(256, mul(sizeOfBitmap, 8)), mload(quoteDataCursor)) }
+            quoteDataCursor := add(quoteDataCursor, sizeOfBitmap)
 
-            pcrDigestLen := shr(240, mload(add(quoteDataStart, offset)))
-            offset := add(offset, 2)
+            pcrDigestLen := shr(240, mload(quoteDataCursor))
+            quoteDataCursor := add(quoteDataCursor, 2)
 
-            pcrDigest := mload(add(quoteDataStart, offset))
+            pcrDigest := mload(quoteDataCursor)
         }
 
         if (pcrSelectionCount != 1) {
