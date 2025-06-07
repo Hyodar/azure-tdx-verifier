@@ -293,19 +293,15 @@ library AzureTDXTPMQuote {
         // Read all header values in assembly
         /// @solidity memory-safe-assembly
         assembly {
-            magic := shr(224, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 4)
+            let data := mload(quoteDataCursor)
 
-            attestType := shr(240, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 2)
-
-            nameLen := shr(240, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, add(2, nameLen))
-
-            extraDataLen := shr(240, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 2)
-
-            extraData := mload(quoteDataCursor)
+            magic := shr(224, data)
+            attestType := and(shr(208, data), 0xffff)
+            nameLen := and(shr(192, data), 0xffff)
+            quoteDataCursor := add(quoteDataCursor, add(8, nameLen))
+            data := mload(quoteDataCursor)
+            extraDataLen := shr(240, data)
+            extraData := mload(add(quoteDataCursor, 2))
         }
 
         if (magic != AzureTDXConstants.TPMS_GENERATED_VALUE) {
@@ -326,26 +322,27 @@ library AzureTDXTPMQuote {
     }
 
     /// @notice Validates PCR values match the digest in the quote
-    /// @dev These values could be checked a bit more efficiently by reading
-    /// the entire slot, masking it and comparing to a reference.
-    /// Done individually for better error throwing.
+    /// @dev Optimized to reduce mload operations by combining reads and reusing values
     /// @param tpmQuote The TPM quote containing PCR information
     function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private pure {
         // Parse quote to extract PCR digest for comparison
         bytes memory quoteData = tpmQuote.quote;
         uint256 quoteDataCursor;
+
         /// @solidity memory-safe-assembly
         assembly {
             quoteDataCursor := add(quoteData, 0x20)
         }
+
         unchecked {
             quoteDataCursor += AzureTDXConstants.QUOTE_HEADER_SIZE;
         }
 
-        // Skip QualifiedSigner
+        // Skip QualifiedSigner - combine length read with cursor update
         /// @solidity memory-safe-assembly
         assembly {
-            let nameLen := shr(240, mload(quoteDataCursor))
+            let data := mload(quoteDataCursor)
+            let nameLen := shr(240, data)
             quoteDataCursor := add(quoteDataCursor, add(2, nameLen))
         }
 
@@ -360,29 +357,22 @@ library AzureTDXTPMQuote {
         uint32 pcrBitmap;
         uint256 pcrDigestLen;
         bytes32 pcrDigest;
-        uint256 sizeOfBitmap;
 
-        // Parse PCR selection and digest
+        // Parse PCR selection and digest - optimize by reading larger chunks
         /// @solidity memory-safe-assembly
         assembly {
-            pcrSelectionCount := shr(224, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 4)
-
-            hashAlgo := shr(240, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 2)
-
-            sizeOfBitmap := shr(248, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 1)
-
-            if gt(sizeOfBitmap, 0) { pcrBitmap := shr(sub(256, mul(sizeOfBitmap, 8)), mload(quoteDataCursor)) }
-            quoteDataCursor := add(quoteDataCursor, sizeOfBitmap)
-
-            pcrDigestLen := shr(240, mload(quoteDataCursor))
-            quoteDataCursor := add(quoteDataCursor, 2)
-
-            pcrDigest := mload(quoteDataCursor)
+            let data := mload(quoteDataCursor)
+            pcrSelectionCount := shr(224, data)
+            hashAlgo := and(shr(208, data), 0xffff)
+            let sizeOfBitmap := byte(6, data)
+            if gt(sizeOfBitmap, 4) { revert(0, 0) }
+            let sizeOfBitmapShifted := shl(3, sizeOfBitmap)
+            pcrBitmap := and(shr(sub(200, sizeOfBitmapShifted), data), sub(shl(sizeOfBitmapShifted, 1), 1))
+            pcrDigestLen := and(shr(sub(184, sizeOfBitmapShifted), data), 0xffff)
+            pcrDigest := mload(add(quoteDataCursor, add(9, sizeOfBitmap)))
         }
 
+        // Validation checks
         if (pcrSelectionCount != 1) {
             revert AzureTDXErrors.InvalidPCRSelectionCount(pcrSelectionCount, 1);
         }
@@ -403,21 +393,30 @@ library AzureTDXTPMQuote {
             revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(tpmQuote.pcrs)));
         }
 
+        // Validate individual PCRs
         uint256 comparedPcrsBitmap = 0;
-        for (uint256 i = 0; i < pcrs.length; i++) {
+        uint256 pcrsLength = pcrs.length;
+
+        for (uint256 i = 0; i < pcrsLength;) {
             uint256 index = pcrs[i].index;
-            if (pcrBitmap & (1 << index) == 0) {
+            uint256 mask = 1 << index;
+
+            if (pcrBitmap & mask == 0) {
                 revert AzureTDXErrors.InvalidPCRIndex(index, pcrBitmap);
             }
 
-            if (comparedPcrsBitmap & (1 << index) != 0) {
+            if (comparedPcrsBitmap & mask != 0) {
                 revert AzureTDXErrors.DuplicatePCR(index);
             }
 
-            comparedPcrsBitmap |= 1 << index;
+            comparedPcrsBitmap |= mask;
 
             if (pcrs[i].digest != tpmQuote.pcrs[index]) {
                 revert AzureTDXErrors.PCRMismatch(i);
+            }
+
+            unchecked {
+                ++i;
             }
         }
     }
