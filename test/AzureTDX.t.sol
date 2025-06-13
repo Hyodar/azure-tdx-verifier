@@ -61,8 +61,8 @@ contract AzureTDXTest is Test {
         }
 
         AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({
-            akPub: trustedAkPub,
-            runtimeDataHash: sha256(attestationDocument.instanceInfo.runtimeData),
+            // akPub: trustedAkPub,
+            // runtimeDataHash: sha256(attestationDocument.instanceInfo.runtimeData),
             pcrs: pcrs
         });
 

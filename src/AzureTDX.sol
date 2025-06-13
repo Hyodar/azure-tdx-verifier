@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Base64} from "solady/utils/Base64.sol";
+import {LibBytes} from "solady/utils/LibBytes.sol";
 import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 
 /// @title AzureTDXErrors
@@ -14,7 +15,6 @@ library AzureTDXErrors {
     error InvalidPCRSelectionCount(uint32 actual, uint32 expected);
     error InvalidPCRBitmap(uint32 actual, uint32 expected);
     error PCRDigestMismatch(bytes32 actual, bytes32 expected);
-    error RuntimeDataHashMismatch(bytes32 actual, bytes32 expected);
     error ExtraDataMismatch(bytes32 actual, bytes32 expected);
     error AttestationReportHashMismatch(bytes32 actual, bytes32 expected);
     error DuplicatePCR(uint256 index);
@@ -23,6 +23,7 @@ library AzureTDXErrors {
     error QuoteTooShort(uint256 actual, uint256 required);
     error InvalidHashAlgorithm(uint16 actual, uint16 expected);
     error InvalidSignature();
+    error InvalidRuntimeData();
 }
 
 /// @title AzureTDXConstants
@@ -96,11 +97,7 @@ library AzureTDX {
     }
 
     /// @notice Trusted input
-    /// @param akPub Trusted attestation key public key to verify against
-    /// @param runtimeDataHash Trusted runtime data hash to verify against
     struct TrustedInput {
-        AkPub akPub;
-        bytes32 runtimeDataHash;
         PCR[] pcrs;
     }
 
@@ -146,11 +143,12 @@ library AzureTDXAttestationDocument {
         bytes32 extraData = _makeExtraData(attestationDocument.userData, nonce);
         bytes32 tpmNonce = _makeTpmNonce(attestationDocument.instanceInfo, extraData);
 
-        // Validate HCL report and verify it matches the attestation key
-        attestationDocument.instanceInfo.verify(trustedInput);
+        // Validate HCL report
+        attestationDocument.instanceInfo.verify();
 
         // Verify the TPM attestation
-        tpmQuote.verify(trustedInput.akPub, trustedInput.pcrs, tpmNonce);
+        AzureTDX.AkPub memory akPub = attestationDocument.instanceInfo.extractAkPub();
+        tpmQuote.verify(akPub, trustedInput.pcrs, tpmNonce);
 
         unverifiedTdxQuote = attestationDocument.instanceInfo.attestationReport;
     }
@@ -195,31 +193,30 @@ library AzureTDXAttestationDocument {
 library AzureTDXInstanceInfo {
     /// @notice Verifies an instance information
     /// @param instanceInfo The instance information to verify
-    /// @param trustedInput The trusted input to verify against
-    function verify(AzureTDX.InstanceInfo memory instanceInfo, AzureTDX.TrustedInput memory trustedInput)
+    function verify(AzureTDX.InstanceInfo memory instanceInfo) internal pure {
+        _verifyHclReport(instanceInfo);
+    }
+
+    /// @notice Extracts the attestation key public key from the attestation report
+    /// @param instanceInfo The instance information containing the attestation report
+    /// @return akPub The extracted attestation key public key
+    function extractAkPub(AzureTDX.InstanceInfo memory instanceInfo)
         internal
         pure
+        returns (AzureTDX.AkPub memory akPub)
     {
-        _verifyHclReport(instanceInfo, trustedInput);
+        return AzureTDXRuntimeData.extractAkPub(instanceInfo.runtimeData);
     }
 
     /// @notice Validates HCL report JSON and verifies it contains the correct AK public key
     /// @param instanceInfo The instance information containing the runtime data
-    /// @param trustedInput The trusted input to verify against
-    function _verifyHclReport(AzureTDX.InstanceInfo memory instanceInfo, AzureTDX.TrustedInput memory trustedInput)
-        private
-        pure
-    {
+    function _verifyHclReport(AzureTDX.InstanceInfo memory instanceInfo) private pure {
         // Verify SHA256 hash of runtimeData matches beginning of reportData
         bytes32 runtimeDataHash = sha256(instanceInfo.runtimeData);
         bytes32 reportDataPrefix = _extractReportDataPrefix(instanceInfo.attestationReport);
 
         if (runtimeDataHash != reportDataPrefix) {
             revert AzureTDXErrors.AttestationReportHashMismatch(runtimeDataHash, reportDataPrefix);
-        }
-
-        if (runtimeDataHash != trustedInput.runtimeDataHash) {
-            revert AzureTDXErrors.RuntimeDataHashMismatch(runtimeDataHash, trustedInput.runtimeDataHash);
         }
     }
 
@@ -434,6 +431,153 @@ library AzureTDXAkPub {
 
         if (!RSA.pkcs1Sha256(message, signature, abi.encodePacked(exponent), akPub.modulusRaw)) {
             revert AzureTDXErrors.InvalidSignature();
+        }
+    }
+}
+
+/// @title AzureTDXRuntimeData
+/// @notice Runtime data implementation for Azure TDX attestation
+library AzureTDXRuntimeData {
+    uint256 internal constant RUNTIME_DATA_START_LEN = 63;
+    uint256 internal constant RSA_EXPONENT_B64_OFFSET = 63;
+    uint256 internal constant RSA_EXPONENT_B64_LEN = 4;
+    uint256 internal constant RSA_MODULUS_SEP_OFFSET = 63 + 5; // len(e) + len("\"")
+    uint256 internal constant RSA_MODULUS_SEP_LEN = 6; // ",\"n\":\""
+    uint256 internal constant RSA_MODULUS_SEP = 0x2c226e223a22;
+    uint256 internal constant RSA_MODULUS_OFFSET = 63 + 5 + 6;
+    uint8 internal constant QUOTE = 0x22;
+
+    // keccak256("{\"keys\":[{\"kid\":\"HCLAkPub\",\"key_ops\":[\"sign\"],\"kty\":\"RSA\",\"e\":\"")
+    bytes32 internal constant RUNTIME_DATA_START_HASH =
+        0xba515574eb2b1bc4cfcbc184a643b480d1da3f86e0518d3eedee7cc814e508cc;
+
+    /// @notice Extracts the attestation key public key from the runtime data
+    /// @dev This assumes the JSON format of the runtime data being "keys" as
+    /// the first element, then the "HCLAkPub" as its first child, with the
+    /// key-values, ordered, being "kid": "HCLAkPub", "key_ops": ["sign"],
+    /// "kty": "RSA", "e": <exponentb64>, "n": <modulusb64>.
+    /// The exponentb64 is assumed to be 4 characters long.
+    /// @param runtimeData The runtime data containing the attestation key public key
+    /// @return akPub The extracted attestation key public key
+    function extractAkPub(bytes memory runtimeData) internal pure returns (AzureTDX.AkPub memory akPub) {
+        if (runtimeData.length < RSA_MODULUS_OFFSET) {
+            revert AzureTDXErrors.InvalidRuntimeData();
+        }
+
+        bool valid;
+        bytes32 exponentB64;
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            let runtimeDataStart := add(runtimeData, 0x20)
+
+            let runtimeDataHash := keccak256(runtimeDataStart, RUNTIME_DATA_START_LEN)
+            valid := eq(runtimeDataHash, RUNTIME_DATA_START_HASH)
+            let lookup := mload(add(runtimeDataStart, RUNTIME_DATA_START_LEN))
+            if eq(byte(RSA_EXPONENT_B64_LEN, lookup), QUOTE) { exponentB64 := and(lookup, shl(224, 0xffffffff)) }
+            valid := and(valid, eq(shr(208, mload(add(runtimeDataStart, RSA_MODULUS_SEP_OFFSET))), RSA_MODULUS_SEP))
+        }
+
+        if (!valid || exponentB64 == bytes32(0)) {
+            revert AzureTDXErrors.InvalidRuntimeData();
+        }
+
+        uint256 nEnd = SoladyFuture.indexOfByte(runtimeData, bytes1(QUOTE), RSA_MODULUS_OFFSET);
+
+        if (nEnd == type(uint256).max) {
+            revert AzureTDXErrors.InvalidRuntimeData();
+        }
+
+        // if the exponent is "AQAB" (0x41514142), it is 0
+        if (exponentB64 == bytes32(bytes4(0x41514142))) {
+            akPub.exponentRaw = 0;
+        } else {
+            bytes memory decoded = Base64Ext.decode(runtimeData, RSA_EXPONENT_B64_OFFSET, RSA_EXPONENT_B64_OFFSET + 4);
+
+            uint32 exponent;
+            /// @solidity memory-safe-assembly
+            assembly {
+                exponent := mload(add(decoded, 0x20))
+                exponent := or(or(byte(31, exponent), shl(8, byte(30, exponent))), shl(16, byte(29, exponent)))
+            }
+            akPub.exponentRaw = exponent;
+        }
+
+        akPub.modulusRaw = Base64Ext.decode(runtimeData, RSA_MODULUS_OFFSET, nEnd);
+
+        return akPub;
+    }
+}
+
+/// @title Base64Ext
+/// @notice Extension of Base64
+library Base64Ext {
+    /// @notice Decodes a base64 string
+    /// @dev We use a destructive slice to create a new string, then decode it
+    /// and later on restore the original string.
+    /// @param base64 The base64 string to decode
+    /// @param offset The offset to start decoding from
+    /// @param end The end of the string to decode
+    /// @return decoded The decoded string
+    function decode(bytes memory base64, uint256 offset, uint256 end) internal pure returns (bytes memory) {
+        string memory ptr;
+
+        uint256 tmp;
+        /// @solidity memory-safe-assembly
+        assembly {
+            ptr := add(base64, offset)
+            tmp := mload(ptr)
+            mstore(ptr, sub(end, offset))
+        }
+
+        bytes memory decoded = Base64.decode(ptr);
+
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(ptr, tmp)
+        }
+
+        return decoded;
+    }
+}
+
+/// @title SoladyFuture
+/// @notice Methods that are not available in solady yet
+library SoladyFuture {
+    /// @dev Returns the byte index of the first location of `needle` in `subject`,
+    /// needleing from left to right, starting from `from`. Optimized for byte needles.
+    /// Returns `NOT_FOUND` (i.e. `type(uint256).max`) if the `needle` is not found.
+    /// Included after https://github.com/Vectorized/solady/pull/1425 and
+    /// https://github.com/Vectorized/solady/pull/1427
+    function indexOfByte(bytes memory subject, bytes1 needle, uint256 from) internal pure returns (uint256 result) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            result := not(0) // Initialize to `NOT_FOUND`.
+            if gt(mload(subject), from) {
+                let start := add(subject, 0x20)
+                let end := add(start, mload(subject))
+                let m := div(not(0), 255) // `0x0101 ... `.
+                let h := mul(byte(0, needle), m) // Replicating needle mask.
+                m := not(shl(7, m)) // `0x7f7f ... `.
+                for { let i := add(start, from) } 1 {} {
+                    let c := xor(mload(i), h) // Load 32-byte chunk and xor with mask.
+                    c := not(or(or(add(and(c, m), m), c), m)) // Each needle byte will be `0x80`.
+                    if c {
+                        c := and(not(shr(shl(3, sub(end, i)), not(0))), c) // Truncate bytes past the end.
+                        if c {
+                            let r := shl(7, lt(0x8421084210842108cc6318c6db6d54be, c)) // Save bytecode.
+                            r := or(shl(6, lt(0xffffffffffffffff, shr(r, c))), r)
+                            // forgefmt: disable-next-item
+                            result := add(sub(i, start), shr(3, xor(byte(and(0x1f, shr(byte(24,
+                                mul(0x02040810204081, shr(r, c))), 0x8421084210842108cc6318c6db6d54be)),
+                                0xc0c8c8d0c8e8d0d8c8e8e0e8d0d8e0f0c8d0e8d0e0e0d8f0d0d0e0d8f8f8f8f8), r)))
+                            break
+                        }
+                    }
+                    i := add(i, 0x20)
+                    if iszero(lt(i, end)) { break }
+                }
+            }
         }
     }
 }
