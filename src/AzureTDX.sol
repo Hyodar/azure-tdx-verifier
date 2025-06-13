@@ -68,7 +68,7 @@ library AzureTDX {
 
     /// @notice Decoded RSA public key structure
     struct AkPub {
-        uint32 exponentRaw; // RSA exponent (0 represents default 65537)
+        uint24 exponentRaw; // RSA exponent (0 represents default 65537)
         bytes modulusRaw; // RSA modulus
     }
 
@@ -492,15 +492,7 @@ library AzureTDXRuntimeData {
         if (exponentB64 == bytes32(bytes4(0x41514142))) {
             akPub.exponentRaw = 0;
         } else {
-            bytes memory decoded = Base64Ext.decode(runtimeData, RSA_EXPONENT_B64_OFFSET, RSA_EXPONENT_B64_OFFSET + 4);
-
-            uint32 exponent;
-            /// @solidity memory-safe-assembly
-            assembly {
-                exponent := mload(add(decoded, 0x20))
-                exponent := or(or(byte(31, exponent), shl(8, byte(30, exponent))), shl(16, byte(29, exponent)))
-            }
-            akPub.exponentRaw = exponent;
+            akPub.exponentRaw = Base64Ext.decodeBase64Uint24LittleEndian(exponentB64);
         }
 
         akPub.modulusRaw = Base64Ext.decode(runtimeData, RSA_MODULUS_OFFSET, nEnd);
@@ -522,6 +514,8 @@ library Base64Ext {
     function decode(bytes memory base64, uint256 offset, uint256 end) internal pure returns (bytes memory) {
         string memory ptr;
 
+        // Destructive slice to create a new string, store the original slot
+        // value in tmp
         uint256 tmp;
         /// @solidity memory-safe-assembly
         assembly {
@@ -532,12 +526,50 @@ library Base64Ext {
 
         bytes memory decoded = Base64.decode(ptr);
 
+        // Restore the original string slot value
         /// @solidity memory-safe-assembly
         assembly {
             mstore(ptr, tmp)
         }
 
         return decoded;
+    }
+
+    /// @notice Decodes a bytes32 containing 4 base64 characters to uint32
+    /// Inspired by https://github.com/Vectorized/solady/blob/b609a9c79ce541c2beca7a7d247665e7c93942a3/src/utils/Base64.sol#L105
+    /// @param input bytes32 containing base64 characters
+    /// @return result decoded uint32 value (little-endian)
+    function decodeBase64Uint24LittleEndian(bytes32 input) internal pure returns (uint24 result) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let fmp := mload(0x40)
+
+            // Load the base64 decode table into scratch space
+            let m := 0xfc000000fc00686c7074787c8084888c9094989ca0a4a8acb0b4b8bcc0c4c8cc
+            mstore(0x5b, m)
+            mstore(0x3b, 0x04080c1014181c2024282c3034383c4044484c5054585c6064)
+            mstore(0x1a, 0xf8fcf800fcd0d4d8dce0e4e8ecf0f4)
+
+            // Decode 4 base64 characters to 3 bytes
+            let decoded :=
+                or(
+                    and(m, mload(byte(28, input))),
+                    shr(
+                        6,
+                        or(
+                            and(m, mload(byte(29, input))),
+                            shr(6, or(and(m, mload(byte(30, input))), shr(6, mload(byte(31, input)))))
+                        )
+                    )
+                )
+
+            // Arrange in little-endian order
+            result := or(or(byte(31, decoded), shl(8, byte(30, decoded))), shl(16, byte(29, decoded)))
+
+            // Restore scratch space and FMP
+            mstore(0x60, 0)
+            mstore(0x40, fmp)
+        }
     }
 }
 
