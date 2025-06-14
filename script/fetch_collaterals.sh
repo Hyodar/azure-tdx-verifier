@@ -36,9 +36,13 @@ url_decode() {
 
 DECODED_CERT=$(url_decode "$TCB_CERT_CHAIN")
 
-# Save the decoded certificate to PEM file
-echo "$DECODED_CERT" > ${TCB_SIGNING_CERT_FILE}
-echo "Saved PEM certificate to ${TCB_SIGNING_CERT_FILE}"
+# Extract only the first certificate from the chain, which is the TCB signing
+# certificate
+FIRST_CERT=$(echo "$DECODED_CERT" | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' | sed -n '1,/-----END CERTIFICATE-----/p')
+
+# Save the signing certificate to PEM file
+echo "$FIRST_CERT" > ${TCB_SIGNING_CERT_FILE}
+echo "Saved signing certificate to ${TCB_SIGNING_CERT_FILE}"
 
 # Convert PEM to DER format
 openssl x509 -in ${TCB_SIGNING_CERT_FILE} -outform DER -out ${TCB_SIGNING_DER_FILE}
