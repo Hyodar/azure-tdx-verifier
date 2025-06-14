@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {Base64} from "solady/utils/Base64.sol";
-import {LibBytes} from "solady/utils/LibBytes.sol";
 import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 
 /// @title AzureTDXErrors
