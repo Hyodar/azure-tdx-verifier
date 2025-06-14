@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/go-tpm-tools/proto/attest"
 	tpmproto "github.com/google/go-tpm-tools/proto/tpm"
@@ -74,7 +75,7 @@ type OutputData struct {
 		Index uint8      `json:"index"`
 		Value HexBytes32 `json:"value"`
 	} `json:"pcrs"`
-	Nonce          string `json:"nonce"`
+	Nonce          HexBytes `json:"nonce"`
 	AdditionalData struct {
 		AkPub struct {
 			ExponentRaw uint32   `json:"exponentRaw"`
@@ -171,6 +172,11 @@ func main() {
 		panic(err)
 	}
 
+	nonce, err := hex.DecodeString(strings.TrimPrefix(inputData.Nonce, "0x"))
+	if err != nil {
+		panic(err)
+	}
+
 	runtimeDataHash := sha256.Sum256(runtimeData)
 
 	output := OutputData{}
@@ -182,7 +188,7 @@ func main() {
 	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
 	output.AttestationDocument.UserData = HexBytes(userData)
 	output.Pcrs = trustedPcrs
-	output.Nonce = inputData.Nonce
+	output.Nonce = HexBytes(nonce)
 	output.AdditionalData.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
 	output.AdditionalData.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
 	output.AdditionalData.RuntimeDataHash = HexBytes32(runtimeDataHash)
