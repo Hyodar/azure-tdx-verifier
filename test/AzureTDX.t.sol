@@ -166,21 +166,12 @@ contract AzureTDXTest is Test {
         });
 
         bytes memory nonce = hex"00";
-        AzureTDX.AkPub memory trustedAkPub = AzureTDX.AkPub({
-            exponentRaw: 0,
-            modulusRaw: hex"f3925b240000c8195dccea9dca1dc03dd13abd11d9278dba4870b33b23a3678a2310e6d4fd0fd9418d17129b276fb62ba18253e84a8409d2bae7ddfb2db5409d5a1eefc971cb56a2cc883deb7e8fe4a519f98ca3acf4ce330c4ba36c634da852e488a67c2c9e97a54aedd4f4ddc81cc231de3152afdb6717f083484827b94aaa01b77467084d8d0409d3f2a1f8c021003775bc27d07f7453478e28c5c9a4b52e7be4fb6c7381a252281fd5802b8b89d510adb5e08584e22f2960c980ce6f8c62c744a8b34d568444af9e74ed23489fbf9a375cd8768029601716ac4b0a9e9d2542a3c6006bafd59776fa18ef8e1249397ee98d18e70c26eed5dc3ef3923860d9"
-        });
-
         AzureTDX.PCR[] memory pcrs = new AzureTDX.PCR[](24);
         for (uint256 i = 0; i < 24; i++) {
             pcrs[i] = AzureTDX.PCR(i, attestationDocument.attestation.tpmQuote.pcrs[i]);
         }
 
-        AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({
-            // akPub: trustedAkPub,
-            // runtimeDataHash: sha256(attestationDocument.instanceInfo.runtimeData),
-            pcrs: pcrs
-        });
+        AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({pcrs: pcrs});
 
         return
             AzureTDX.VerifyParams({attestationDocument: attestationDocument, trustedInput: trustedInput, nonce: nonce});
