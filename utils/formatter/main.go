@@ -41,7 +41,6 @@ func (h HexBytes32) MarshalJSON() ([]byte, error) {
 
 type InputData struct {
 	RawQuote json.RawMessage `json:"rawQuote"`
-	UserData string          `json:"userData"`
 	Nonce    string          `json:"nonce"`
 }
 
@@ -53,7 +52,7 @@ type InstanceInfo struct {
 type AttestationDocument struct {
 	Attestation  *attest.Attestation
 	InstanceInfo []byte
-	UserData     []byte
+	UserData     string
 }
 
 type OutputData struct {
@@ -69,7 +68,7 @@ type OutputData struct {
 			AttestationReport HexBytes `json:"attestationReport"`
 			RuntimeData       HexBytes `json:"runtimeData"`
 		} `json:"instanceInfo"`
-		UserData string `json:"userData"`
+		UserData HexBytes `json:"userData"`
 	} `json:"attestationDocument"`
 	Pcrs []struct {
 		Index uint8      `json:"index"`
@@ -167,6 +166,11 @@ func main() {
 		panic(err)
 	}
 
+	userData, err := base64.StdEncoding.DecodeString(doc.UserData)
+	if err != nil {
+		panic(err)
+	}
+
 	runtimeDataHash := sha256.Sum256(runtimeData)
 
 	output := OutputData{}
@@ -176,7 +180,7 @@ func main() {
 	output.AttestationDocument.Attestation.TpmQuote.Pcrs = pcrs
 	output.AttestationDocument.InstanceInfo.AttestationReport = HexBytes(attestationReport)
 	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
-	output.AttestationDocument.UserData = inputData.UserData
+	output.AttestationDocument.UserData = HexBytes(userData)
 	output.Pcrs = trustedPcrs
 	output.Nonce = inputData.Nonce
 	output.AdditionalData.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
