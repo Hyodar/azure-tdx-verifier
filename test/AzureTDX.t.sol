@@ -13,7 +13,7 @@ import {CA} from "@automata-network/on-chain-pccs/Common.sol";
 
 import {Test} from "forge-std/Test.sol";
 
-import {AzureTDX, AzureTDXAttestationDocument} from "../src/AzureTDX.sol";
+import {AzureTDX} from "../src/AzureTDX.sol";
 
 /// @dev Small hack - instead of importing PcsDao, which requires via-ir to
 /// be compiled, we just declare this interface
@@ -22,8 +22,6 @@ interface IPcsDao {
 }
 
 contract AzureTDXTest is Test {
-    using AzureTDXAttestationDocument for AzureTDX.AttestationDocument;
-
     function testValidate() public view {
         AzureTDX.verify(_exampleParams());
     }
