@@ -25,7 +25,7 @@ contract AzureTDXTest is Test {
     using AzureTDXAttestationDocument for AzureTDX.AttestationDocument;
 
     function testValidate() public view {
-        AzureTDX.verify(_testParams());
+        AzureTDX.verify(_exampleParams());
     }
 
     function test_BuilderNet() public view {
@@ -124,7 +124,7 @@ contract AzureTDXTest is Test {
             AzureTDX.VerifyParams({attestationDocument: attestationDocument, trustedInput: trustedInput, nonce: nonce});
     }
 
-    function _testParams() internal pure returns (AzureTDX.VerifyParams memory) {
+    function _exampleParams() internal pure returns (AzureTDX.VerifyParams memory) {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
                 tpmQuote: AzureTDX.TPMQuote({
