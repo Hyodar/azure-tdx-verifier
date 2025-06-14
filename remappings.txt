@@ -1,3 +1,10 @@
 forge-std/=lib/forge-std/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 solady/=lib/solady/src/
+@automata-network/automata-dcap-attestation/=lib/automata-dcap-attestation/evm/contracts/
+
+p256-verifier/=lib/automata-dcap-attestation/evm/lib/automata-on-chain-pccs/lib/p256-verifier/src/
+@automata-network/on-chain-pccs/=lib/automata-dcap-attestation/evm/lib/automata-on-chain-pccs/src/
+risc0/=lib/automata-dcap-attestation/evm/lib/risc0-ethereum/contracts/src/
+openzeppelin/=lib/automata-dcap-attestation/evm/lib/risc0-ethereum/lib/openzeppelin-contracts/
+@sp1-contracts/=lib/automata-dcap-attestation/evm/lib/sp1-contracts/contracts/src/
