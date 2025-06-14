@@ -28,16 +28,16 @@ contract AzureTDXTest is Test {
         AzureTDX.verify(_testParams());
     }
 
-    function test_Buildernet() public view {
-        AzureTDX.verify(_buildernetParams());
+    function test_BuilderNet() public view {
+        AzureTDX.verify(_builderNetParams());
     }
 
-    function testFork_Buildernet_WithAutomata() public {
+    function testFork_BuilderNet_WithAutomata() public {
         vm.createSelectFork(vm.envString("MAINNET_FORK_URL"), 22700276);
 
         _setUpCollaterals();
 
-        bytes memory unverifiedTdxQuote = AzureTDX.verify(_buildernetParams());
+        bytes memory unverifiedTdxQuote = AzureTDX.verify(_builderNetParams());
         (bool success,) = AutomataDcapAttestationFee(0x95175096a9B74165BE0ac84260cc14Fc1c0EF5FF).verifyAndAttestOnChain(
             unverifiedTdxQuote
         );
@@ -70,7 +70,7 @@ contract AzureTDXTest is Test {
         );
     }
 
-    function _buildernetParams() internal pure returns (AzureTDX.VerifyParams memory) {
+    function _builderNetParams() internal pure returns (AzureTDX.VerifyParams memory) {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
                 tpmQuote: AzureTDX.TPMQuote({
