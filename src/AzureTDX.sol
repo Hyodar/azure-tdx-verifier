@@ -57,7 +57,11 @@ library AzureTDXConstants {
 /// @notice Library for validating Azure TDX attestations with TPM quotes
 /// This library is compatible with the Constellation validation standard,
 /// relies on some initial pre-processing to remove unnecessary data and
-/// takes many assumptions over the data instead of doing a full sanity check.
+/// takes some assumptions over the data instead of doing a full sanity
+/// check, such as the some field sizes. It also doesn't verify the event logs
+/// result on the expected PCRs.
+/// The TDX quote is not verified - it is expected to be verified by the
+/// caller through external means.
 library AzureTDX {
     /// @notice Minimal TPM quote structure containing only required fields
     struct TPMQuote {
