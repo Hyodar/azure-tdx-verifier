@@ -99,18 +99,13 @@ library AzureTDX {
         bytes userData; // User-provided data included in attestation
     }
 
-    /// @notice Trusted input
-    struct TrustedInput {
-        PCR[] pcrs;
-    }
-
     /// @notice Verification params
     /// @param attestationDocument The attestation document to validate
-    /// @param trustedInput Trusted input to verify against
+    /// @param pcrs PCRs to verify against
     /// @param nonce Random nonce to prevent replay attacks
     struct VerifyParams {
         AttestationDocument attestationDocument;
-        TrustedInput trustedInput;
+        PCR[] pcrs;
         bytes nonce;
     }
 
@@ -118,9 +113,8 @@ library AzureTDX {
     /// @param verifyParams The verification params
     /// @return unverifiedTdxQuote The unverified TDX quote
     function verify(VerifyParams memory verifyParams) internal view returns (bytes memory unverifiedTdxQuote) {
-        return AzureTDXAttestationDocument.verify(
-            verifyParams.attestationDocument, verifyParams.trustedInput, verifyParams.nonce
-        );
+        return
+            AzureTDXAttestationDocument.verify(verifyParams.attestationDocument, verifyParams.pcrs, verifyParams.nonce);
     }
 }
 
@@ -132,12 +126,12 @@ library AzureTDXAttestationDocument {
 
     /// @notice Verifies a complete attestation document
     /// @param attestationDocument The attestation document to validate
-    /// @param trustedInput Trusted input to verify against
-    /// @param nonce Random nonce to prevent replay attacks
+    /// @param pcrs PCRs to verify against
+    /// @param nonce Nonce used in the attestation issuing
     /// @return unverifiedTdxQuote The unverified TDX quote
     function verify(
         AzureTDX.AttestationDocument memory attestationDocument,
-        AzureTDX.TrustedInput memory trustedInput,
+        AzureTDX.PCR[] memory pcrs,
         bytes memory nonce
     ) internal view returns (bytes memory unverifiedTdxQuote) {
         AzureTDX.TPMQuote memory tpmQuote = attestationDocument.attestation.tpmQuote;
@@ -151,7 +145,7 @@ library AzureTDXAttestationDocument {
 
         // Verify the TPM attestation
         AzureTDX.AkPub memory akPub = attestationDocument.instanceInfo.extractAkPub();
-        tpmQuote.verify(akPub, trustedInput.pcrs, tpmNonce);
+        tpmQuote.verify(akPub, pcrs, tpmNonce);
 
         unverifiedTdxQuote = attestationDocument.instanceInfo.attestationReport;
     }

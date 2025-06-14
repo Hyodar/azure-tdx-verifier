@@ -71,18 +71,18 @@ type OutputData struct {
 		} `json:"instanceInfo"`
 		UserData string `json:"userData"`
 	} `json:"attestationDocument"`
-	TrustedInput struct {
+	Pcrs []struct {
+		Index uint8      `json:"index"`
+		Value HexBytes32 `json:"value"`
+	} `json:"pcrs"`
+	Nonce          string `json:"nonce"`
+	AdditionalData struct {
 		AkPub struct {
 			ExponentRaw uint32   `json:"exponentRaw"`
 			ModulusRaw  HexBytes `json:"modulusRaw"`
 		} `json:"akPub"`
 		RuntimeDataHash HexBytes32 `json:"runtimeDataHash"`
-		Pcrs            []struct {
-			Index uint8      `json:"index"`
-			Value HexBytes32 `json:"value"`
-		} `json:"pcrs"`
-	} `json:"trustedInput"`
-	Nonce string `json:"nonce"`
+	} `json:"additionalData"`
 }
 
 func main() {
@@ -177,11 +177,11 @@ func main() {
 	output.AttestationDocument.InstanceInfo.AttestationReport = HexBytes(attestationReport)
 	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
 	output.AttestationDocument.UserData = inputData.UserData
-	output.TrustedInput.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
-	output.TrustedInput.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
-	output.TrustedInput.RuntimeDataHash = HexBytes32(runtimeDataHash)
-	output.TrustedInput.Pcrs = trustedPcrs
+	output.Pcrs = trustedPcrs
 	output.Nonce = inputData.Nonce
+	output.AdditionalData.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
+	output.AdditionalData.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
+	output.AdditionalData.RuntimeDataHash = HexBytes32(runtimeDataHash)
 
 	jsonOutput, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {

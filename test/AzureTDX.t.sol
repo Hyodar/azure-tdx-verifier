@@ -118,10 +118,7 @@ contract AzureTDXTest is Test {
             pcrs[i] = AzureTDX.PCR(i, attestationDocument.attestation.tpmQuote.pcrs[i]);
         }
 
-        AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({pcrs: pcrs});
-
-        return
-            AzureTDX.VerifyParams({attestationDocument: attestationDocument, trustedInput: trustedInput, nonce: nonce});
+        return AzureTDX.VerifyParams({attestationDocument: attestationDocument, pcrs: pcrs, nonce: nonce});
     }
 
     function _exampleParams() internal pure returns (AzureTDX.VerifyParams memory) {
@@ -171,9 +168,6 @@ contract AzureTDXTest is Test {
             pcrs[i] = AzureTDX.PCR(i, attestationDocument.attestation.tpmQuote.pcrs[i]);
         }
 
-        AzureTDX.TrustedInput memory trustedInput = AzureTDX.TrustedInput({pcrs: pcrs});
-
-        return
-            AzureTDX.VerifyParams({attestationDocument: attestationDocument, trustedInput: trustedInput, nonce: nonce});
+        return AzureTDX.VerifyParams({attestationDocument: attestationDocument, pcrs: pcrs, nonce: nonce});
     }
 }
