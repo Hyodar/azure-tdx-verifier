@@ -77,10 +77,10 @@ type OutputData struct {
 	} `json:"pcrs"`
 	Nonce          HexBytes `json:"nonce"`
 	AdditionalData struct {
-		AkPub struct {
+		HclAkPub struct {
 			ExponentRaw uint32   `json:"exponentRaw"`
 			ModulusRaw  HexBytes `json:"modulusRaw"`
-		} `json:"akPub"`
+		} `json:"hclAkPub"`
 		RuntimeDataHash HexBytes32 `json:"runtimeDataHash"`
 	} `json:"additionalData"`
 }
@@ -113,7 +113,7 @@ func main() {
 		panic(err)
 	}
 
-	decodedAkPub, err := tpm2.DecodePublic(doc.Attestation.AkPub)
+	decodedHclAkPub, err := tpm2.DecodePublic(doc.Attestation.AkPub)
 	if err != nil {
 		panic(err)
 	}
@@ -189,8 +189,8 @@ func main() {
 	output.AttestationDocument.UserData = HexBytes(userData)
 	output.Pcrs = trustedPcrs
 	output.Nonce = HexBytes(nonce)
-	output.AdditionalData.AkPub.ExponentRaw = decodedAkPub.RSAParameters.ExponentRaw
-	output.AdditionalData.AkPub.ModulusRaw = HexBytes(decodedAkPub.RSAParameters.ModulusRaw)
+	output.AdditionalData.HclAkPub.ExponentRaw = decodedHclAkPub.RSAParameters.ExponentRaw
+	output.AdditionalData.HclAkPub.ModulusRaw = HexBytes(decodedHclAkPub.RSAParameters.ModulusRaw)
 	output.AdditionalData.RuntimeDataHash = HexBytes32(runtimeDataHash)
 
 	jsonOutput, err := json.MarshalIndent(output, "", "  ")
