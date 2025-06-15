@@ -29,8 +29,16 @@ contract AzureTDXVerifier {
     function verifyAttestation(AzureTDX.VerifyParams memory params) external view {
         bytes memory tdxQuote = AzureTDX.verify(params);
 
+        _verifyUserData(params.attestationDocument.userData);
         _invalidateNonce(params.nonce);
         _verifyTDXQuote(tdxQuote);
+    }
+
+    function _verifyUserData(bytes memory userData) internal view {
+        // Verify the user data
+        // This can be, for example, comparing the user data to the hash of a
+        // set of inputs that are expected to be included in the verification
+        // call to identify the workload
     }
 
     function _verifyTDXQuote(bytes memory tdxQuote) internal view {
