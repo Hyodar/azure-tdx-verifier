@@ -31,6 +31,7 @@ library AzureTDXConstants {
     // TPM Quote Constants
     uint32 internal constant TPMS_GENERATED_VALUE = 0xff544347;
     uint16 internal constant TAG_ATTEST_QUOTE = 0x8018;
+    uint16 internal constant ALG_SHA256 = 0x000b;
 
     // Structure sizes
     // Literals so they can be used in assembly
@@ -41,6 +42,7 @@ library AzureTDXConstants {
     uint16 internal constant TPM_NONCE_SIZE = 32;
 
     // PCR Constants
+    uint32 internal constant EXPECTED_PCR_SELECTION_COUNT = 1;
     uint32 internal constant EXPECTED_PCR_BITMAP = 0xffffff; // All 24 PCRs
     uint32 internal constant PCR_COUNT = 24;
 
@@ -367,12 +369,14 @@ library AzureTDXTPMQuote {
         }
 
         // Validation checks
-        if (pcrSelectionCount != 1) {
-            revert AzureTDXErrors.InvalidPCRSelectionCount(pcrSelectionCount, 1);
+        if (pcrSelectionCount != AzureTDXConstants.EXPECTED_PCR_SELECTION_COUNT) {
+            revert AzureTDXErrors.InvalidPCRSelectionCount(
+                pcrSelectionCount, AzureTDXConstants.EXPECTED_PCR_SELECTION_COUNT
+            );
         }
 
-        if (hashAlgo != 11) {
-            revert AzureTDXErrors.InvalidHashAlgorithm(hashAlgo, 11);
+        if (hashAlgo != AzureTDXConstants.ALG_SHA256) {
+            revert AzureTDXErrors.InvalidHashAlgorithm(hashAlgo, AzureTDXConstants.ALG_SHA256);
         }
 
         if (pcrBitmap != AzureTDXConstants.EXPECTED_PCR_BITMAP) {
@@ -486,7 +490,7 @@ library AzureTDXRuntimeData {
         }
 
         // if the exponent is "AQAB" (0x41514142), it is 0
-        if (exponentB64 == bytes32(bytes4(0x41514142))) {
+        if (exponentB64 == bytes32(bytes4("AQAB"))) {
             akPub.exponentRaw = 0;
         } else {
             akPub.exponentRaw = Base64Ext.decodeBase64Uint24LittleEndian(exponentB64);
