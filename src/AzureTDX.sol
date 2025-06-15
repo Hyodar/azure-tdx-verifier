@@ -544,7 +544,7 @@ library AzureTDXRuntimeData {
         if (exponentB64 == bytes32(bytes4("AQAB"))) {
             akPub.exponentRaw = 0;
         } else {
-            akPub.exponentRaw = Base64Ext.decodeBase64Uint24LittleEndian(exponentB64);
+            akPub.exponentRaw = Base64Ext.decodeBase64Uint24LE(exponentB64);
         }
 
         akPub.modulusRaw = Base64Ext.decode(runtimeData, RSA_MODULUS_OFFSET, nEnd);
@@ -591,7 +591,7 @@ library Base64Ext {
     /// Inspired by https://github.com/Vectorized/solady/blob/b609a9c79ce541c2beca7a7d247665e7c93942a3/src/utils/Base64.sol#L105
     /// @param input bytes32 containing base64 characters
     /// @return result decoded uint32 value (little-endian)
-    function decodeBase64Uint24LittleEndian(bytes32 input) internal pure returns (uint24 result) {
+    function decodeBase64Uint24LE(bytes32 input) internal pure returns (uint24 result) {
         /// @solidity memory-safe-assembly
         assembly {
             let fmp := mload(0x40)
