@@ -603,17 +603,14 @@ library Base64Ext {
             mstore(0x1a, 0xf8fcf800fcd0d4d8dce0e4e8ecf0f4)
 
             // Decode 4 base64 characters to 3 bytes
-            let decoded :=
-                or(
-                    and(m, mload(byte(28, input))),
-                    shr(
-                        6,
-                        or(
-                            and(m, mload(byte(29, input))),
-                            shr(6, or(and(m, mload(byte(30, input))), shr(6, mload(byte(31, input)))))
-                        )
-                    )
-                )
+            // forgefmt: disable-next-item
+            let decoded := or(
+                and(m, mload(byte(28, input))),
+                shr(6, or(
+                    and(m, mload(byte(29, input))),
+                    shr(6, or(and(m, mload(byte(30, input))), shr(6, mload(byte(31, input))))
+                ))
+            ))
 
             // Arrange in little-endian order
             result := or(or(byte(31, decoded), shl(8, byte(30, decoded))), shl(16, byte(29, decoded)))
