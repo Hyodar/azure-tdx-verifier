@@ -21,30 +21,52 @@ interface IPcsDao {
     function upsertPcsCertificates(CA ca, bytes calldata cert) external returns (bytes32 attestationId);
 }
 
+contract AzureTDXVerifier {
+    function verify(AzureTDX.VerifyParams memory params) public view returns (bytes memory) {
+        return AzureTDX.verify(params);
+    }
+}
+
 contract AzureTDXTest is Test {
+    AzureTDXVerifier verifier;
+
+    function setUp() public {
+        verifier = new AzureTDXVerifier();
+    }
+
     function testValidate() public view {
-        AzureTDX.verify(_exampleParams());
+        verifier.verify(AzureTDXTestUtils.exampleParams());
     }
 
     function test_BuilderNet() public view {
-        AzureTDX.verify(_builderNetParams());
+        verifier.verify(AzureTDXTestUtils.builderNetParams());
+    }
+}
+
+contract AzureTDXForkTest is Test {
+    AzureTDXVerifier verifier;
+
+    AutomataDcapAttestationFee immutable attestationFee =
+        AutomataDcapAttestationFee(0x95175096a9B74165BE0ac84260cc14Fc1c0EF5FF);
+
+    function setUp() public {
+        vm.createSelectFork(vm.envString("MAINNET_FORK_URL"), 22700276);
+        AzureTDXTestUtils.setUpAutomataMainnetCollaterals();
+
+        verifier = new AzureTDXVerifier();
     }
 
     function testFork_BuilderNet_WithAutomata() public {
-        vm.createSelectFork(vm.envString("MAINNET_FORK_URL"), 22700276);
-
-        _setUpCollaterals();
-
-        bytes memory unverifiedTdxQuote = AzureTDX.verify(_builderNetParams());
-        (bool success,) = AutomataDcapAttestationFee(0x95175096a9B74165BE0ac84260cc14Fc1c0EF5FF).verifyAndAttestOnChain(
-            unverifiedTdxQuote
-        );
+        bytes memory unverifiedTdxQuote = verifier.verify(AzureTDXTestUtils.builderNetParams());
+        (bool success,) = attestationFee.verifyAndAttestOnChain(unverifiedTdxQuote);
 
         assertTrue(success, "Attestation verification should be successful");
     }
+}
 
+library AzureTDXTestUtils {
     /// @dev Collaterals obtained using `script/fetch_collaterals.sh`
-    function _setUpCollaterals() internal {
+    function setUpAutomataMainnetCollaterals() internal {
         IPcsDao(0x45CF7485A0D394130153a3630EA0729999511C2e).upsertPcsCertificates(
             CA.SIGNING,
             hex"3082028d30820232a00302010202147e3882d5fb55294a40498e458403e91491bdf455300a06082a8648ce3d0403023068311a301806035504030c11496e74656c2053475820526f6f74204341311a3018060355040a0c11496e74656c20436f72706f726174696f6e3114301206035504070c0b53616e746120436c617261310b300906035504080c024341310b3009060355040613025553301e170d3235303530363039323530305a170d3332303530363039323530305a306c311e301c06035504030c15496e74656c2053475820544342205369676e696e67311a3018060355040a0c11496e74656c20436f72706f726174696f6e3114301206035504070c0b53616e746120436c617261310b300906035504080c024341310b30090603550406130255533059301306072a8648ce3d020106082a8648ce3d0301070342000443451bcc73c9d5917caf766e61af3fe98087dd4f13257b261e851897799dd13d6811fb47713803bb9bae587fccddc2e31be9a28b86962acc6daf96da58eeca96a381b53081b2301f0603551d2304183016801422650cd65a9d3489f383b49552bf501b392706ac30520603551d1f044b30493047a045a043864168747470733a2f2f6365727469666963617465732e7472757374656473657276696365732e696e74656c2e636f6d2f496e74656c534758526f6f7443412e646572301d0603551d0e041604147e3882d5fb55294a40498e458403e91491bdf455300e0603551d0f0101ff0404030206c0300c0603551d130101ff04023000300a06082a8648ce3d0403020349003046022100dd9a646e028dea08ef130b522824c213028384c38765804047cd2cf54ee3124c022100a553a8e92de7df9ca343b79b7842fafe456f4d058d859c81ebb71228ce50ba39"
@@ -68,7 +90,7 @@ contract AzureTDXTest is Test {
         );
     }
 
-    function _builderNetParams() internal pure returns (AzureTDX.VerifyParams memory) {
+    function builderNetParams() internal pure returns (AzureTDX.VerifyParams memory) {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
                 tpmQuote: AzureTDX.TPMQuote({
@@ -119,7 +141,7 @@ contract AzureTDXTest is Test {
         return AzureTDX.VerifyParams({attestationDocument: attestationDocument, pcrs: pcrs, nonce: nonce});
     }
 
-    function _exampleParams() internal pure returns (AzureTDX.VerifyParams memory) {
+    function exampleParams() internal pure returns (AzureTDX.VerifyParams memory) {
         AzureTDX.AttestationDocument memory attestationDocument = AzureTDX.AttestationDocument({
             attestation: AzureTDX.Attestation({
                 tpmQuote: AzureTDX.TPMQuote({
