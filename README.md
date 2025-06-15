@@ -47,7 +47,7 @@ contract AzureTDXVerifier {
 
 ### Formatter
 
-Converts Constellation-issued quotes to the verifier input format.
+Converts Constellation-issued quotes to the verifier input format. For more information, see the formatter documentation [here](./utils/formatter/README.md).
 
 ```bash
 go run utils/formatter/main.go input.json > output.json
