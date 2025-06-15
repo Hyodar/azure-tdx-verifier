@@ -7,21 +7,37 @@ import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 /// @title AzureTDXErrors
 /// @notice Error definitions for Azure TDX attestation validation
 library AzureTDXErrors {
+    /// @dev Selector: 0x275d88f5
     error InvalidMagicValue(uint32 actual, uint32 expected);
+    /// @dev Selector: 0xe2c91f07
     error InvalidAttestationType(uint16 actual, uint16 expected);
+    /// @dev Selector: 0x582d9d9e
     error InvalidExtraDataLength(uint16 actual, uint16 expected);
+    /// @dev Selector: 0xe732c100
     error InvalidPCRDigestLength(uint256 actual, uint256 expected);
+    /// @dev Selector: 0xbd30298c
     error InvalidPCRSelectionCount(uint32 actual, uint32 expected);
+    /// @dev Selector: 0x04a788cd
     error InvalidPCRBitmap(uint32 actual, uint32 expected);
+    /// @dev Selector: 0x49909b94
     error PCRDigestMismatch(bytes32 actual, bytes32 expected);
+    /// @dev Selector: 0x79845059
     error ExtraDataMismatch(bytes32 actual, bytes32 expected);
+    /// @dev Selector: 0x4638579c
     error AttestationReportHashMismatch(bytes32 actual, bytes32 expected);
+    /// @dev Selector: 0xf8f24d74
     error DuplicatePCR(uint256 index);
+    /// @dev Selector: 0x53e619a0
     error InvalidPCRIndex(uint256 index, uint256 bitmap);
+    /// @dev Selector: 0xceb66952
     error PCRMismatch(uint256 entryIndex);
+    /// @dev Selector: 0x0d59ee32
     error QuoteTooShort(uint256 actual, uint256 required);
+    /// @dev Selector: 0x4e2132b9
     error InvalidHashAlgorithm(uint16 actual, uint16 expected);
+    /// @dev Selector: 0x8baa579f
     error InvalidSignature();
+    /// @dev Selector: 0x5c48d84b
     error InvalidRuntimeData();
 }
 
