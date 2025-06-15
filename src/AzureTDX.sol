@@ -34,7 +34,6 @@ library AzureTDXConstants {
     uint16 internal constant ALG_SHA256 = 0x000b;
 
     // Structure sizes
-    // Literals so they can be used in assembly
     uint256 internal constant QUOTE_HEADER_SIZE = 6; // magic(4) + type(2)
     uint256 internal constant CLOCK_INFO_SIZE = 17; // clock(8) + resetCount(4) + restartCount(4) + safe(1)
     uint256 internal constant FIRMWARE_VERSION_SIZE = 8;
@@ -219,8 +218,8 @@ library AzureTDXInstanceInfo {
         }
     }
 
-    /// @notice Extracts report data from a TDX quote
-    /// @param quote The TDX quote containing the report data
+    /// @notice Extracts report data prefix from a TDX quote
+    /// @param quote The TDX quote containing the report data hash as a prefix
     /// @return reportDataPrefix The extracted report data prefix
     function _extractReportDataPrefix(bytes memory quote) private pure returns (bytes32 reportDataPrefix) {
         if (quote.length < AzureTDXConstants.TDX_REPORT_DATA_OFFSET + AzureTDXConstants.TDX_REPORT_DATA_SIZE) {
