@@ -22,8 +22,18 @@ interface IPcsDao {
 }
 
 contract AzureTDXVerifier {
-    function verify(AzureTDX.VerifyParams memory params) public view returns (bytes memory) {
-        return AzureTDX.verify(params);
+    function verify(AzureTDX.VerifyParams memory params) public view {
+        AzureTDX.verify(params);
+    }
+}
+
+contract AzureTDXVerifierAutomataMainnet {
+    AutomataDcapAttestationFee immutable attestationFee =
+        AutomataDcapAttestationFee(0x95175096a9B74165BE0ac84260cc14Fc1c0EF5FF);
+
+    function verify(AzureTDX.VerifyParams memory params) public returns (bool) {
+        (bool success,) = attestationFee.verifyAndAttestOnChain(AzureTDX.verify(params));
+        return success;
     }
 }
 
@@ -44,23 +54,19 @@ contract AzureTDXTest is Test {
 }
 
 contract AzureTDXForkTest is Test {
-    AzureTDXVerifier verifier;
-
-    AutomataDcapAttestationFee immutable attestationFee =
-        AutomataDcapAttestationFee(0x95175096a9B74165BE0ac84260cc14Fc1c0EF5FF);
+    AzureTDXVerifierAutomataMainnet verifier;
 
     function setUp() public {
         vm.createSelectFork(vm.envString("MAINNET_FORK_URL"), 22700276);
         AzureTDXTestUtils.setUpAutomataMainnetCollaterals();
 
-        verifier = new AzureTDXVerifier();
+        verifier = new AzureTDXVerifierAutomataMainnet();
     }
 
     function testFork_BuilderNet_WithAutomata() public {
-        bytes memory unverifiedTdxQuote = verifier.verify(AzureTDXTestUtils.builderNetParams());
-        (bool success,) = attestationFee.verifyAndAttestOnChain(unverifiedTdxQuote);
-
-        assertTrue(success, "Attestation verification should be successful");
+        assertTrue(
+            verifier.verify(AzureTDXTestUtils.builderNetParams()), "Attestation verification should be successful"
+        );
     }
 }
 
