@@ -66,7 +66,7 @@ library AzureTDXConstants {
     uint256 internal constant TDX_REPORT_DATA_SIZE = 64;
 
     // RSA Constants
-    uint32 internal constant DEFAULT_RSA_EXPONENT = 65537;
+    uint24 internal constant DEFAULT_RSA_EXPONENT = 65537;
 }
 
 /// @title AzureTDX
@@ -170,20 +170,26 @@ library AzureTDXAttestationDocument {
     /// @notice Creates extra data hash from user data and nonce
     /// @param userData User-provided data
     /// @param nonce Random nonce
-    /// @return Hash of concatenated user data and nonce
-    function _makeExtraData(bytes memory userData, bytes memory nonce) private pure returns (bytes32) {
-        return sha256(abi.encodePacked(userData, nonce));
+    /// @return extraData Hash of concatenated user data and nonce
+    function _makeExtraData(bytes memory userData, bytes memory nonce) private view returns (bytes32 extraData) {
+        bytes memory content = abi.encodePacked(userData, nonce);
+        /// @solidity memory-safe-assembly
+        assembly {
+            let success := staticcall(gas(), 0x02, add(content, 0x20), mload(content), 0x00, 0x20)
+            if iszero(success) { revert(0, 0) }
+            extraData := mload(0x00)
+        }
     }
 
     /// @notice Creates TPM nonce from instance info and extra data in the
     /// Constellation format
     /// @param instanceInfo Instance information containing reports
     /// @param extraData Extra data hash
-    /// @return TPM nonce
+    /// @return tpmNonce TPM nonce
     function _makeTpmNonce(AzureTDX.InstanceInfo memory instanceInfo, bytes32 extraData)
         private
-        pure
-        returns (bytes32)
+        view
+        returns (bytes32 tpmNonce)
     {
         // Compiling this with solc 0.8.28, the result is actually very
         // efficient.
@@ -191,14 +197,20 @@ library AzureTDXAttestationDocument {
         // string and manipulating the FMP to fill it is about 400 gas only,
         // even if it feels like this would lead to way more gas usage.
         // forgefmt: disable-next-item
-        return sha256(bytes(abi.encodePacked(
+        bytes memory content = bytes(abi.encodePacked(
             "{\"AttestationReport\":\"",
             Base64.encode(instanceInfo.attestationReport),
             "\",\"RuntimeData\":\"",
             Base64.encode(instanceInfo.runtimeData),
             "\"}",
             extraData
-        )));
+        ));
+        /// @solidity memory-safe-assembly
+        assembly {
+            let success := staticcall(gas(), 0x02, add(content, 0x20), mload(content), 0x00, 0x20)
+            if iszero(success) { revert(0, 0) }
+            tpmNonce := mload(0x00)
+        }
     }
 }
 
@@ -207,7 +219,7 @@ library AzureTDXAttestationDocument {
 library AzureTDXInstanceInfo {
     /// @notice Verifies an instance information
     /// @param instanceInfo The instance information to verify
-    function verify(AzureTDX.InstanceInfo memory instanceInfo) internal pure {
+    function verify(AzureTDX.InstanceInfo memory instanceInfo) internal view {
         _verifyHclReport(instanceInfo);
     }
 
@@ -224,9 +236,16 @@ library AzureTDXInstanceInfo {
 
     /// @notice Validates HCL report JSON and verifies it contains the correct AK public key
     /// @param instanceInfo The instance information containing the runtime data
-    function _verifyHclReport(AzureTDX.InstanceInfo memory instanceInfo) private pure {
+    function _verifyHclReport(AzureTDX.InstanceInfo memory instanceInfo) private view {
         // Verify SHA256 hash of runtimeData matches beginning of reportData
-        bytes32 runtimeDataHash = sha256(instanceInfo.runtimeData);
+        bytes memory runtimeData = instanceInfo.runtimeData;
+        bytes32 runtimeDataHash;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let success := staticcall(gas(), 0x02, add(runtimeData, 0x20), mload(runtimeData), 0x00, 0x20)
+            if iszero(success) { revert(0, 0) }
+            runtimeDataHash := mload(0x00)
+        }
         bytes32 reportDataPrefix = _extractReportDataPrefix(instanceInfo.attestationReport);
 
         if (runtimeDataHash != reportDataPrefix) {
@@ -276,7 +295,7 @@ library AzureTDXTPMQuote {
     /// @notice Validates a TPM quote structure
     /// @param tpmQuote The TPM quote to verify
     /// @param tpmNonce Expected nonce value in the quote
-    function validate(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs, bytes32 tpmNonce) internal pure {
+    function validate(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs, bytes32 tpmNonce) internal view {
         _validateHeader(tpmQuote, tpmNonce);
         _validatePCRs(tpmQuote, pcrs);
     }
@@ -335,7 +354,7 @@ library AzureTDXTPMQuote {
     /// @notice Validates PCR values match the digest in the quote
     /// @dev Optimized to reduce mload operations by combining reads and reusing values
     /// @param tpmQuote The TPM quote containing PCR information
-    function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private pure {
+    function _validatePCRs(AzureTDX.TPMQuote memory tpmQuote, AzureTDX.PCR[] memory pcrs) private view {
         // Parse quote to extract PCR digest for comparison
         bytes memory quoteData = tpmQuote.quote;
         uint256 quoteDataCursor;
@@ -402,8 +421,17 @@ library AzureTDXTPMQuote {
             revert AzureTDXErrors.InvalidPCRDigestLength(pcrDigestLen, AzureTDXConstants.SHA256_DIGEST_SIZE);
         }
 
-        if (pcrDigest != sha256(abi.encodePacked(tpmQuote.pcrs))) {
-            revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, sha256(abi.encodePacked(tpmQuote.pcrs)));
+        bytes32[24] memory quotePcrs = tpmQuote.pcrs;
+        bytes32 computedPcrDigest;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let success := staticcall(gas(), 0x02, quotePcrs, 768, 0x00, 0x20)
+            if iszero(success) { revert(0, 0) }
+            computedPcrDigest := mload(0x00)
+        }
+
+        if (pcrDigest != computedPcrDigest) {
+            revert AzureTDXErrors.PCRDigestMismatch(pcrDigest, computedPcrDigest);
         }
 
         // Validate individual PCRs
@@ -443,9 +471,17 @@ library AzureTDXAkPub {
     /// @param akPub The attestation key public key
     /// @param message The message that was signed
     function verifySignature(AzureTDX.AkPub memory akPub, bytes memory signature, bytes memory message) internal view {
-        uint32 exponent = akPub.exponentRaw == 0 ? AzureTDXConstants.DEFAULT_RSA_EXPONENT : akPub.exponentRaw;
+        uint24 exponent = akPub.exponentRaw == 0 ? AzureTDXConstants.DEFAULT_RSA_EXPONENT : akPub.exponentRaw;
 
-        if (!RSA.pkcs1Sha256(message, signature, abi.encodePacked(exponent), akPub.modulusRaw)) {
+        bytes32 messageHash;
+        /// @solidity memory-safe-assembly
+        assembly {
+            let success := staticcall(gas(), 0x02, add(message, 0x20), mload(message), 0x00, 0x20)
+            if iszero(success) { revert(0, 0) }
+            messageHash := mload(0x00)
+        }
+
+        if (!RSA.pkcs1Sha256(messageHash, signature, abi.encodePacked(exponent), akPub.modulusRaw)) {
             revert AzureTDXErrors.InvalidSignature();
         }
     }
