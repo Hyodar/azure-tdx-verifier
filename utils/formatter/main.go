@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -86,37 +87,45 @@ type OutputData struct {
 }
 
 func main() {
+	log.SetPrefix("[formatter] ")
+	log.SetFlags(0)
+
 	if len(os.Args) < 2 {
-		fmt.Println("No file provided")
+		fmt.Fprintf(os.Stderr, "Usage: %s <input_file>\n", os.Args[0])
 		os.Exit(1)
 	}
 
 	inputFilename := os.Args[1]
+	log.Printf("Processing input file: %s", inputFilename)
 
 	input, err := os.ReadFile(inputFilename)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to read input file: %v", err)
 	}
 
 	var inputData InputData
 	if err := json.Unmarshal(input, &inputData); err != nil {
-		panic(err)
+		log.Fatalf("Failed to parse input JSON: %v", err)
 	}
+	log.Println("Successfully parsed input data")
 
 	var doc AttestationDocument
 	if err := json.Unmarshal(inputData.RawQuote, &doc); err != nil {
-		panic(err)
+		log.Fatalf("Failed to parse attestation document from rawQuote: %v", err)
 	}
+	log.Println("Successfully parsed attestation document")
 
 	var instanceInfo InstanceInfo
 	if err := json.Unmarshal(doc.InstanceInfo, &instanceInfo); err != nil {
-		panic(err)
+		log.Fatalf("Failed to parse instance info: %v", err)
 	}
+	log.Println("Successfully parsed instance info")
 
 	decodedHclAkPub, err := tpm2.DecodePublic(doc.Attestation.AkPub)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode HCL attestation key public key: %v", err)
 	}
+	log.Println("Successfully decoded HCL attestation key")
 
 	var sha256Quote *tpmproto.Quote
 	for _, quote := range doc.Attestation.Quotes {
@@ -126,8 +135,9 @@ func main() {
 		}
 	}
 	if sha256Quote == nil {
-		panic("no SHA256 quote found")
+		log.Fatalf("No SHA256 quote found in attestation quotes")
 	}
+	log.Println("Found SHA256 quote")
 
 	pcrs := [24]HexBytes32{}
 	for i, pcr := range sha256Quote.Pcrs.Pcrs {
@@ -136,8 +146,9 @@ func main() {
 
 	decodedSig, err := tpm2.DecodeSignature(bytes.NewBuffer(sha256Quote.RawSig))
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode TPM signature: %v", err)
 	}
+	log.Println("Successfully decoded TPM signature")
 
 	trustedPcrs := []struct {
 		Index uint8      `json:"index"`
@@ -159,23 +170,27 @@ func main() {
 
 	attestationReport, err := base64.StdEncoding.DecodeString(instanceInfo.AttestationReport)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode attestation report: %v", err)
 	}
+	log.Printf("Decoded attestation report (%d bytes)", len(attestationReport))
 
 	runtimeData, err := base64.StdEncoding.DecodeString(instanceInfo.RuntimeData)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode runtime data: %v", err)
 	}
+	log.Printf("Decoded runtime data (%d bytes)", len(runtimeData))
 
 	userData, err := base64.StdEncoding.DecodeString(doc.UserData)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode user data: %v", err)
 	}
+	log.Printf("Decoded user data (%d bytes)", len(userData))
 
 	nonce, err := hex.DecodeString(strings.TrimPrefix(inputData.Nonce, "0x"))
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to decode nonce from hex: %v", err)
 	}
+	log.Printf("Decoded nonce (%d bytes)", len(nonce))
 
 	runtimeDataHash := sha256.Sum256(runtimeData)
 
@@ -193,10 +208,12 @@ func main() {
 	output.AdditionalData.HclAkPub.ModulusRaw = HexBytes(decodedHclAkPub.RSAParameters.ModulusRaw)
 	output.AdditionalData.RuntimeDataHash = HexBytes32(runtimeDataHash)
 
+	log.Println("Formatting output data...")
 	jsonOutput, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to marshal output JSON: %v", err)
 	}
 
+	log.Println("Successfully formatted attestation data")
 	fmt.Println(string(jsonOutput))
 }
