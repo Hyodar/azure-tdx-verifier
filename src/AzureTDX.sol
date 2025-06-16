@@ -4,6 +4,8 @@ pragma solidity ^0.8.0;
 import {Base64} from "solady/utils/Base64.sol";
 import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 
+import {console2} from "forge-std/console2.sol";
+
 /// @title AzureTDXErrors
 /// @notice Error definitions for Azure TDX attestation validation
 library AzureTDXErrors {
@@ -540,9 +542,9 @@ library AzureTDXRuntimeData {
             revert AzureTDXErrors.InvalidRuntimeData();
         }
 
-        // if the exponent is "AQAB" (0x41514142), it is 0
+        // if the exponent is "AQAB" (0x41514142), it is 65537
         if (exponentB64 == bytes32(bytes4("AQAB"))) {
-            akPub.exponentRaw = 0;
+            akPub.exponentRaw = AzureTDXConstants.DEFAULT_RSA_EXPONENT;
         } else {
             akPub.exponentRaw = Base64Ext.decodeBase64Uint24LE(exponentB64);
         }
@@ -602,18 +604,14 @@ library Base64Ext {
             mstore(0x3b, 0x04080c1014181c2024282c3034383c4044484c5054585c6064)
             mstore(0x1a, 0xf8fcf800fcd0d4d8dce0e4e8ecf0f4)
 
-            // Decode 4 base64 characters to 3 bytes
             // forgefmt: disable-next-item
-            let decoded := or(
-                and(m, mload(byte(28, input))),
+            result := shr(232, or(
+                and(m, mload(byte(0, input))),
                 shr(6, or(
-                    and(m, mload(byte(29, input))),
-                    shr(6, or(and(m, mload(byte(30, input))), shr(6, mload(byte(31, input))))
+                    and(m, mload(byte(1, input))),
+                    shr(6, or(and(m, mload(byte(2, input))), shr(6, mload(byte(3, input))))
                 ))
-            ))
-
-            // Arrange in little-endian order
-            result := or(or(byte(31, decoded), shl(8, byte(30, decoded))), shl(16, byte(29, decoded)))
+            )))
 
             // Restore scratch space and FMP
             mstore(0x60, 0)
