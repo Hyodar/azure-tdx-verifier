@@ -591,10 +591,10 @@ library Base64Ext {
         return decoded;
     }
 
-    /// @notice Decodes a bytes32 containing 4 base64 characters to uint32
+    /// @notice Decodes a bytes32 containing 4 base64 characters to uint24
     /// Inspired by https://github.com/Vectorized/solady/blob/b609a9c79ce541c2beca7a7d247665e7c93942a3/src/utils/Base64.sol#L105
     /// @param input bytes32 containing base64 characters
-    /// @return result decoded uint32 value (little-endian)
+    /// @return result decoded uint24 value (little-endian)
     function decodeBase64Uint24LE(bytes32 input) internal pure returns (uint24 result) {
         /// @solidity memory-safe-assembly
         assembly {
