@@ -6,7 +6,7 @@
 
 A Solidity library for on-chain verification of Azure vTPM TDX attestations based on the [Constellation](https://github.com/edgelesssys/constellation) format. This library enables smart contracts to verify the authenticity and integrity of Azure confidential computing environments.
 
-This library does not verify the TDX quote. It only verifies the TPM quote and the attestation document. The verification of the TDX quote can be done through, e.g. the [Automata DCAP Attestation](https://github.com/automata-network/automata-dcap-attestation) contracts.
+This library does not verify the TDX quote. It only verifies the TPM quote and the attestation document. The verification of the TDX quote can be done through e.g. the [Automata DCAP Attestation](https://github.com/automata-network/automata-dcap-attestation) contracts.
 
 ## Overview
 
@@ -37,10 +37,8 @@ contract AzureTDXVerifier {
     }
 
     function _verifyUserData(bytes memory userData) internal view {
-        // Verify the user data
-        // This can be, for example, comparing the user data to the hash of a
-        // set of inputs that are expected to be included in the verification
-        // call to identify the workload
+        // The user data can, for example, be the concatenation or hash of a
+        // set of fields that identify the workload being verified
     }
 
     function _verifyTDXQuote(bytes memory tdxQuote) internal view {
