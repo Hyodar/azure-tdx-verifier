@@ -4,8 +4,6 @@ pragma solidity ^0.8.0;
 import {Base64} from "solady/utils/Base64.sol";
 import {RSA} from "openzeppelin-contracts/contracts/utils/cryptography/RSA.sol";
 
-import {console2} from "forge-std/console2.sol";
-
 /// @title AzureTDXErrors
 /// @notice Error definitions for Azure TDX attestation validation
 library AzureTDXErrors {
