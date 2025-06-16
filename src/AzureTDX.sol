@@ -566,6 +566,8 @@ library Base64Ext {
     /// @param end The end of the string to decode
     /// @return decoded The decoded string
     function decode(bytes memory base64, uint256 offset, uint256 end) internal pure returns (bytes memory) {
+        require(offset <= end && end <= base64.length);
+
         string memory ptr;
 
         // Destructive slice to create a new string, store the original slot
