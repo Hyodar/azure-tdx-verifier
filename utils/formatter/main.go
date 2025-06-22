@@ -68,7 +68,13 @@ type OutputData struct {
 		} `json:"attestation"`
 		InstanceInfo struct {
 			AttestationReport HexBytes `json:"attestationReport"`
-			RuntimeData       HexBytes `json:"runtimeData"`
+			RuntimeData       struct {
+				Raw      HexBytes `json:"raw"`
+				HclAkPub struct {
+					ExponentRaw uint32   `json:"exponentRaw"`
+					ModulusRaw  HexBytes `json:"modulusRaw"`
+				} `json:"hclAkPub"`
+			} `json:"runtimeData"`
 		} `json:"instanceInfo"`
 		UserData HexBytes `json:"userData"`
 	} `json:"attestationDocument"`
@@ -78,10 +84,6 @@ type OutputData struct {
 	} `json:"pcrs"`
 	Nonce          HexBytes `json:"nonce"`
 	AdditionalData struct {
-		HclAkPub struct {
-			ExponentRaw uint32   `json:"exponentRaw"`
-			ModulusRaw  HexBytes `json:"modulusRaw"`
-		} `json:"hclAkPub"`
 		RuntimeDataHash HexBytes32 `json:"runtimeDataHash"`
 	} `json:"additionalData"`
 }
@@ -200,12 +202,12 @@ func main() {
 	output.AttestationDocument.Attestation.TpmQuote.RsaSignature = HexBytes(decodedSig.RSA.Signature)
 	output.AttestationDocument.Attestation.TpmQuote.Pcrs = pcrs
 	output.AttestationDocument.InstanceInfo.AttestationReport = HexBytes(attestationReport)
-	output.AttestationDocument.InstanceInfo.RuntimeData = HexBytes(runtimeData)
+	output.AttestationDocument.InstanceInfo.RuntimeData.Raw = HexBytes(runtimeData)
+	output.AttestationDocument.InstanceInfo.RuntimeData.HclAkPub.ExponentRaw = decodedHclAkPub.RSAParameters.ExponentRaw
+	output.AttestationDocument.InstanceInfo.RuntimeData.HclAkPub.ModulusRaw = HexBytes(decodedHclAkPub.RSAParameters.ModulusRaw)
 	output.AttestationDocument.UserData = HexBytes(userData)
 	output.Pcrs = trustedPcrs
 	output.Nonce = HexBytes(nonce)
-	output.AdditionalData.HclAkPub.ExponentRaw = decodedHclAkPub.RSAParameters.ExponentRaw
-	output.AdditionalData.HclAkPub.ModulusRaw = HexBytes(decodedHclAkPub.RSAParameters.ModulusRaw)
 	output.AdditionalData.RuntimeDataHash = HexBytes32(runtimeDataHash)
 
 	log.Println("Formatting output data...")
