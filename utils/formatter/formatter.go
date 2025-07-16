@@ -25,7 +25,7 @@ const (
 type HexBytes []byte
 
 func (h HexBytes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hex.EncodeToString(h))
+	return json.Marshal(HexPrefix + hex.EncodeToString(h))
 }
 
 func (h *HexBytes) UnmarshalJSON(data []byte) error {
@@ -33,6 +33,8 @@ func (h *HexBytes) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &hexStr); err != nil {
 		return fmt.Errorf("unmarshal hex string: %w", err)
 	}
+
+	hexStr = strings.TrimPrefix(hexStr, HexPrefix)
 
 	decoded, err := hex.DecodeString(hexStr)
 	if err != nil {
@@ -51,26 +53,14 @@ func (h HexBytes32) MarshalJSON() ([]byte, error) {
 
 type InputData struct {
 	RawQuote json.RawMessage `json:"rawQuote"`
-	Nonce    string          `json:"nonce"`
+	Nonce    HexBytes        `json:"nonce"`
 }
 
 func (i *InputData) Validate() error {
 	if len(i.RawQuote) == 0 {
 		return fmt.Errorf("rawQuote is empty")
 	}
-	if i.Nonce == "" {
-		return fmt.Errorf("nonce is empty")
-	}
 	return nil
-}
-
-func (i *InputData) DecodeNonce() ([]byte, error) {
-	nonceStr := strings.TrimPrefix(i.Nonce, HexPrefix)
-	nonce, err := hex.DecodeString(nonceStr)
-	if err != nil {
-		return nil, fmt.Errorf("decode nonce: %w", err)
-	}
-	return nonce, nil
 }
 
 type InstanceInfo struct {
@@ -251,7 +241,7 @@ func (f *AzureTDXFormatter) Format(inputData *InputData) (*OutputData, error) {
 		return nil, err
 	}
 
-	output := f.buildOutput(processedData, decodedData)
+	output := f.buildOutput(inputData, processedData, decodedData)
 	f.logger.Info("attestation format completed successfully")
 	return output, nil
 }
@@ -359,7 +349,6 @@ type decodedAdditionalData struct {
 	attestationReport []byte
 	runtimeData       []byte
 	userData          []byte
-	nonce             []byte
 	runtimeDataHash   [32]byte
 }
 
@@ -385,12 +374,6 @@ func (f *AzureTDXFormatter) decodeAdditionalData(inputData *InputData, doc *Atte
 	}
 	f.logger.Debug("decoded user data", "size", len(userData))
 
-	nonce, err := inputData.DecodeNonce()
-	if err != nil {
-		return nil, err
-	}
-	f.logger.Debug("decoded nonce", "size", len(nonce))
-
 	runtimeDataHash := sha256.Sum256(runtimeData)
 	f.logger.Debug("computed runtime data hash", "hash", hex.EncodeToString(runtimeDataHash[:]))
 
@@ -398,13 +381,12 @@ func (f *AzureTDXFormatter) decodeAdditionalData(inputData *InputData, doc *Atte
 		attestationReport: attestationReport,
 		runtimeData:       runtimeData,
 		userData:          userData,
-		nonce:             nonce,
 		runtimeDataHash:   runtimeDataHash,
 	}, nil
 }
 
 // buildOutput constructs the final output data structure
-func (f *AzureTDXFormatter) buildOutput(processed *processedAttestationData, decoded *decodedAdditionalData) *OutputData {
+func (f *AzureTDXFormatter) buildOutput(inputData *InputData, processed *processedAttestationData, decoded *decodedAdditionalData) *OutputData {
 	output := &OutputData{}
 
 	output.AttestationDocument.Attestation.TpmQuote.Quote = HexBytes(processed.sha256Quote.Quote)
@@ -420,7 +402,7 @@ func (f *AzureTDXFormatter) buildOutput(processed *processedAttestationData, dec
 
 	output.Pcrs = f.buildPCRList(processed.pcrs)
 
-	output.Nonce = HexBytes(decoded.nonce)
+	output.Nonce = inputData.Nonce
 	output.AdditionalData.RuntimeDataHash = HexBytes32(decoded.runtimeDataHash)
 
 	return output
