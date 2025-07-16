@@ -5,12 +5,12 @@ This formatter converts Constellation-issued Azure TDX attestation quotes into a
 ## Usage
 
 ```bash
-go run main.go <input_file>
+go run cmd/main.go <input_file>
 ```
 
 Example:
 ```bash
-go run main.go samples/example.json
+go run cmd/main.go samples/example.json
 ```
 
 ## Input Format

@@ -64,4 +64,4 @@ jobs:
     - name: Run formatter on sample
       run: |
         cd utils/formatter
-        go run main.go samples/example.json
+        go run cmd/main.go samples/example.json
